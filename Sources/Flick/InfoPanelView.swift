@@ -35,7 +35,11 @@ final class InfoPanelView: NSVisualEffectView {
 
         super.init(frame: frameRect)
         material = .sidebar
-        blendingMode = .behindWindow
+        // .withinWindow blends with the image beneath the floating panel
+        // (.behindWindow would blend with the desktop behind the app), and
+        // a slight alpha keeps it translucent instead of fully opaque.
+        blendingMode = .withinWindow
+        alphaValue = 0.92
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.masksToBounds = true

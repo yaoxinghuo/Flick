@@ -84,6 +84,10 @@ enum MenuBuilder {
         menu.addItem(make("循环浏览", #selector(MainWindowController.toggleWrapAround(_:))))
         menu.addItem(.separator())
 
+        menu.addItem(make("暂停动画", #selector(MainWindowController.toggleAnimationPlayback(_:)), "p", []))
+        menu.addItem(make("信息面板", #selector(MainWindowController.toggleInfoPanel(_:)), "i"))
+        menu.addItem(.separator())
+
         let backgroundItem = NSMenuItem(title: "背景", action: nil, keyEquivalent: "")
         let backgroundMenu = NSMenu(title: "背景")
         backgroundItem.submenu = backgroundMenu

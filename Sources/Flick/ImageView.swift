@@ -40,6 +40,13 @@ final class ImageView: NSView {
     }()
 
     private let zoomHUD = ZoomHUDView()
+    private let infoPanel = InfoPanelView()
+    private let infoPanelWidth: CGFloat = 260
+    private(set) var infoPanelVisible = false
+
+    /// Called whenever magnification changes — the controller uses it to
+    /// decide whether a higher-resolution decode is needed.
+    var onZoomChanged: (() -> Void)?
 
     private var mouseTrackingArea: NSTrackingArea?
     private var isFullScreen = false
@@ -52,11 +59,14 @@ final class ImageView: NSView {
         wantsLayer = true
 
         scrollView.frame = bounds
-        scrollView.autoresizingMask = [.width, .height]
         scrollView.onMagnificationChanged = { [weak self] magnification in
             self?.zoomHUD.show(text: "\(Int((magnification * 100).rounded()))%")
+            self?.onZoomChanged?()
         }
         addSubview(scrollView)
+
+        infoPanel.isHidden = true
+        addSubview(infoPanel)
 
         addSubview(spinner)
         addSubview(messageLabel)
@@ -67,7 +77,6 @@ final class ImageView: NSView {
             messageLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
-        zoomHUD.autoresizingMask = [.minXMargin, .maxYMargin]
         addSubview(zoomHUD)
 
         animator = PageTurnAnimator(hostView: self, scrollView: scrollView)
@@ -79,23 +88,76 @@ final class ImageView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    // MARK: - Layout
+
+    /// Sidebar layout: scroll view takes everything left of the info panel.
+    override func layout() {
+        super.layout()
+        let panelWidth = infoPanelVisible ? infoPanelWidth : 0
+        scrollView.frame = NSRect(
+            x: 0, y: 0,
+            width: bounds.width - panelWidth, height: bounds.height
+        )
+        infoPanel.frame = NSRect(
+            x: bounds.width - panelWidth, y: 0,
+            width: panelWidth, height: bounds.height
+        )
+        // Keep the HUD pinned to the scroll view's right edge, not the panel's.
+        zoomHUD.frame.origin = NSPoint(
+            x: scrollView.frame.maxX - zoomHUD.frame.width - 12,
+            y: 12
+        )
+    }
+
+    // MARK: - Info panel
+
+    func setInfoPanelVisible(_ visible: Bool) {
+        infoPanelVisible = visible
+        infoPanel.isHidden = !visible
+        needsLayout = true
+    }
+
+    func updateInfoPanel(metadata: ImageMetadata?) {
+        infoPanel.update(metadata: metadata)
+    }
+
     // MARK: - Content
 
-    func setImage(_ image: CGImage?) {
+    func setImage(_ image: CGImage?, displaySize: NSSize) {
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
-        scrollView.setImage(image)
+        scrollView.setImage(image, displaySize: displaySize)
     }
 
-    func updateImage(_ image: CGImage) {
-        scrollView.updateImage(image)
+    func setAnimated(_ animated: AnimatedImage, displaySize: NSSize, quarterTurns: Int) {
+        messageLabel.isHidden = true
+        setLoading(false)
+        animator?.finishImmediately()
+        scrollView.setAnimatedContent(
+            animated, displaySize: displaySize, quarterTurns: quarterTurns
+        )
+    }
+
+    func updateAnimatedRotation(quarterTurns: Int, displaySize: NSSize) {
+        scrollView.updateAnimatedRotation(
+            quarterTurns: quarterTurns, displaySize: displaySize
+        )
+    }
+
+    func updateImage(_ image: CGImage, displaySize: NSSize) {
+        scrollView.updateImage(image, displaySize: displaySize)
+    }
+
+    /// Swaps in higher-resolution pixels without changing layout.
+    func upgradeStill(_ image: CGImage) {
+        scrollView.upgradeStill(image)
     }
 
     /// Placeholder text shown when there is no image (empty state or error).
     func setMessage(_ message: String) {
         setLoading(false)
-        scrollView.setImage(nil)
+        scrollView.setImage(nil, displaySize: .zero)
         zoomHUD.hideImmediately()
         messageLabel.stringValue = message
         messageLabel.isHidden = false

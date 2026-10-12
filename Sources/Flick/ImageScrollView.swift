@@ -126,11 +126,16 @@ final class ImageScrollView: NSScrollView {
     }
 
     /// Replaces the displayed image and resets to fit.
-    func setImage(_ image: CGImage?) {
-        imageSize = image.map { NSSize(width: $0.width, height: $0.height) } ?? .zero
+    /// `displaySize` is the *real* image size (rotated), which may be larger
+    /// than the decoded `image` when a downsampled tier is shown — the doc
+    /// view stretches it, and a higher-res tier can be swapped in via
+    /// `upgradeStill` without touching layout.
+    func setImage(_ image: CGImage?, displaySize: NSSize) {
+        imageSize = displaySize
+        document.clearAnimated()
         document.image = image
         document.layer?.transform = CATransform3DIdentity
-        document.frame = NSRect(origin: .zero, size: imageSize)
+        document.frame = NSRect(origin: .zero, size: displaySize)
         zoomMode = .fit
         updateMagnificationRange()
         magnification = fitMagnification
@@ -138,11 +143,41 @@ final class ImageScrollView: NSScrollView {
         notify()
     }
 
+    /// Displays an animated image; doc bounds = `displaySize` (rotated dims),
+    /// the animation layer handles rotation via its own transform.
+    func setAnimatedContent(
+        _ animated: AnimatedImage,
+        displaySize: NSSize,
+        quarterTurns: Int
+    ) {
+        imageSize = displaySize
+        document.setAnimated(animated, quarterTurns: quarterTurns)
+        document.layer?.transform = CATransform3DIdentity
+        document.frame = NSRect(origin: .zero, size: displaySize)
+        zoomMode = .fit
+        updateMagnificationRange()
+        magnification = fitMagnification
+        scrollToTopLeft()
+        notify()
+    }
+
+    /// Rotation change while animated: doc bounds swap w/h on odd turns,
+    /// the animation layer just re-transforms — zero pixel work.
+    func updateAnimatedRotation(quarterTurns: Int, displaySize: NSSize) {
+        imageSize = displaySize
+        document.setAnimatedRotation(quarterTurns)
+        document.frame = NSRect(origin: .zero, size: displaySize)
+        updateMagnificationRange()
+        applyModeMagnification()
+        scrollToTopLeft()
+        notify()
+    }
+
     /// New pixels, same logical image (e.g. after rotation). Keeps the mode.
-    func updateImage(_ image: CGImage) {
-        imageSize = NSSize(width: image.width, height: image.height)
+    func updateImage(_ image: CGImage, displaySize: NSSize) {
+        imageSize = displaySize
         document.image = image
-        document.frame = NSRect(origin: .zero, size: imageSize)
+        document.frame = NSRect(origin: .zero, size: displaySize)
         updateMagnificationRange()
         switch zoomMode {
         case .fit, .fill:
@@ -152,6 +187,23 @@ final class ImageScrollView: NSScrollView {
         }
         scrollToTopLeft()
         notify()
+    }
+
+    /// Swaps in higher-resolution pixels for the same still — doc bounds
+    /// stay identical, so the only visible change is sharper content.
+    func upgradeStill(_ image: CGImage) {
+        document.image = image
+        document.layer?.transform = CATransform3DIdentity
+    }
+
+    // MARK: - Animation playback
+
+    var hasAnimatedContent: Bool { document.animatedImage != nil }
+    var isAnimationPaused: Bool { document.isAnimationPaused }
+
+    @discardableResult
+    func toggleAnimationPause() -> Bool {
+        document.toggleAnimationPause()
     }
 
     private func scrollToTopLeft() {

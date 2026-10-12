@@ -39,7 +39,7 @@ public final class ImageLoadTask {
 public final class ImageStore {
     private let cache = NSCache<NSURL, CGImage>()
     private let queue = DispatchQueue(
-        label: "peek.imagestore",
+        label: "flick.imagestore",
         qos: .userInitiated,
         attributes: .concurrent
     )

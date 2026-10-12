@@ -1,12 +1,13 @@
 #!/bin/bash
-# Builds a universal Peek.app by hand (no Xcode) and zips it as Peek.zip.
+# Builds a universal Flick.app by hand (no Xcode) and zips it as Flick.zip.
 # Usage: Scripts/build_app.sh [version]
 #   version defaults to the latest git tag (without leading "v"), else 0.1.0.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="Peek"
-BUNDLE_ID="com.example.peek"
+APP_NAME="Flick"
+BUNDLE_ID="com.example.flick"
+ICON_SRC="Resources/icon_1024.png"
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
@@ -34,6 +35,26 @@ echo "==> Assembling $APP"
 rm -rf "$APP" "$APP_NAME.zip"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create "$ARM_BIN" "$X86_BIN" -output "$APP/Contents/MacOS/$APP_NAME"
+
+ICON_ENTRY=""
+if [ -f "$ICON_SRC" ]; then
+    echo "==> Generating AppIcon.icns"
+    ICONSET="$(mktemp -d)/AppIcon.iconset"
+    mkdir -p "$ICONSET"
+    # iconutil requires the classic iconset naming convention.
+    for spec in "16 16" "32 16@2x" "32 32" "64 32@2x" "128 128" "256 128@2x" "256 256" "512 256@2x" "512 512" "1024 512@2x"; do
+        size="${spec%% *}"
+        name="${spec##* }"
+        sips -z "$size" "$size" "$ICON_SRC" --out "$ICONSET/icon_${name}.png" >/dev/null
+    done
+    iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+    rm -rf "$(dirname "$ICONSET")"
+    ICON_ENTRY="    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+"
+else
+    echo "==> No $ICON_SRC found, skipping icon"
+fi
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -72,7 +93,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     </array>
     <key>CFBundleExecutable</key>
     <string>$APP_NAME</string>
-    <key>CFBundleIdentifier</key>
+${ICON_ENTRY}    <key>CFBundleIdentifier</key>
     <string>$BUNDLE_ID</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>

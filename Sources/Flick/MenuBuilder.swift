@@ -1,5 +1,5 @@
 import AppKit
-import PeekCore
+import FlickCore
 
 /// Builds the whole menu bar in code (no XIBs). Items with a `nil` target are
 /// delivered through the responder chain to `MainWindowController`.
@@ -21,9 +21,9 @@ enum MenuBuilder {
         let item = NSMenuItem()
         let menu = NSMenu()
         item.submenu = menu
-        menu.addItem(make("关于 \(Peek.appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+        menu.addItem(make("关于 \(Flick.appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
         menu.addItem(.separator())
-        menu.addItem(make("退出 \(Peek.appName)", #selector(NSApplication.terminate(_:)), "q"))
+        menu.addItem(make("退出 \(Flick.appName)", #selector(NSApplication.terminate(_:)), "q"))
         return item
     }
 
@@ -88,7 +88,7 @@ enum MenuBuilder {
         let item = NSMenuItem()
         let menu = NSMenu(title: "帮助")
         item.submenu = menu
-        menu.addItem(make("\(Peek.appName) 使用帮助", #selector(MainWindowController.showHelp(_:)), "?"))
+        menu.addItem(make("\(Flick.appName) 使用帮助", #selector(MainWindowController.showHelp(_:)), "?"))
         return item
     }
 

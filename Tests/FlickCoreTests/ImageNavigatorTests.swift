@@ -1,5 +1,5 @@
 import Testing
-@testable import PeekCore
+@testable import FlickCore
 
 struct ImageNavigatorTests {
 

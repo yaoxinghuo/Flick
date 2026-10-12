@@ -1,5 +1,5 @@
 import AppKit
-import PeekCore
+import FlickCore
 
 /// Owns the single browser window: resolves what to show (folder vs. ad-hoc
 /// list), drives `ImageNavigator`, loads images through `ImageStore` and keeps
@@ -23,7 +23,7 @@ final class MainWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = Peek.appName
+        window.title = Flick.appName
         window.minSize = NSSize(width: 400, height: 300)
         window.center()
         super.init(window: window)
@@ -100,7 +100,7 @@ final class MainWindowController: NSWindowController {
         currentFolder = nil
         loadTask?.cancel()
         imageView.setMessage(text)
-        window?.title = Peek.appName
+        window?.title = Flick.appName
         window?.representedURL = nil
     }
 
@@ -117,7 +117,7 @@ final class MainWindowController: NSWindowController {
 
         guard let file = currentFile else {
             imageView.setMessage("没有图片")
-            window?.title = Peek.appName
+            window?.title = Flick.appName
             window?.representedURL = nil
             return
         }
@@ -216,7 +216,7 @@ final class MainWindowController: NSWindowController {
 
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
-        alert.messageText = "\(Peek.appName) 使用帮助"
+        alert.messageText = "\(Flick.appName) 使用帮助"
         alert.informativeText = """
         打开：⌘O 选择图片或文件夹，或直接拖拽到窗口 / Dock 图标
         翻页：← / →、空格（下一张）、⇧空格（上一张）、Home / End

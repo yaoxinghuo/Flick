@@ -29,11 +29,11 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Peek
-          path: Peek.zip
+          name: Flick
+          path: Flick.zip
 
       - name: Create release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" Peek.zip --title "Peek ${GITHUB_REF_NAME}" --generate-notes
+        run: gh release create "${GITHUB_REF_NAME}" Flick.zip --title "Flick ${GITHUB_REF_NAME}" --generate-notes

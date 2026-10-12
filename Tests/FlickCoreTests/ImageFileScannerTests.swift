@@ -1,13 +1,13 @@
 import Foundation
 import Testing
-@testable import PeekCore
+@testable import FlickCore
 
 struct ImageFileScannerTests {
 
     /// Creates a temp folder populated with the given file names (empty files).
     private func makeFolder(files: [String]) throws -> URL {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("peek-tests-\(UUID().uuidString)")
+            .appendingPathComponent("flick-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for name in files {
             let url = folder.appendingPathComponent(name)

@@ -2,14 +2,14 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Testing
-@testable import PeekCore
+@testable import FlickCore
 
 struct ImageStoreTests {
 
     /// Generates a small PNG on the fly (no binary fixtures committed).
     private func makePNG(size: Int = 64) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("peek-test-\(UUID().uuidString).png")
+            .appendingPathComponent("flick-test-\(UUID().uuidString).png")
         let context = CGContext(
             data: nil, width: size, height: size,
             bitsPerComponent: 8, bytesPerRow: 0,
@@ -52,7 +52,7 @@ struct ImageStoreTests {
 
     @Test func corruptFileThrowsDecodeError() throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("peek-corrupt-\(UUID().uuidString).png")
+            .appendingPathComponent("flick-corrupt-\(UUID().uuidString).png")
         try Data([0x89, 0x50, 0x4E, 0x47, 0xDE, 0xAD]).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         #expect(throws: ImageLoadError.self) {

@@ -1,11 +1,11 @@
-# Peek
+# Flick
 
 一个极简的 macOS 只读看图软件（Pixea 风格的轻量替代品）。只看不改：不做编辑、标注、滤镜、删除。
 
 - 纯 Swift Package（SwiftPM），无 Xcode 工程、无 storyboard/xib、零第三方依赖
-- 界面：AppKit 纯代码；逻辑层 `PeekCore` 与 UI 解耦、可单元测试
+- 界面：AppKit 纯代码；逻辑层 `FlickCore` 与 UI 解耦、可单元测试
 - 最低系统：macOS 15；universal binary（Apple Silicon + Intel）
-- 应用名 `Peek` 为占位名，集中定义在 `Sources/PeekCore/PeekConstants.swift`
+- 应用名集中定义在 `Sources/FlickCore/FlickConstants.swift`
 
 ## 构建
 
@@ -14,8 +14,8 @@
 ```bash
 swift build                # debug
 swift build -c release     # release
-swift run Peek             # 运行
-swift run Peek /path/to/图片或文件夹   # 带参数打开
+swift run Flick            # 运行
+swift run Flick /path/to/图片或文件夹   # 带参数打开
 ```
 
 ## 测试
@@ -39,19 +39,20 @@ swift test
 ./Scripts/build_app.sh [版本号]   # 版本号缺省取最新 git tag，无 tag 用 0.1.0
 ```
 
-产出 `Peek.app` 与 `Peek.zip`。应用为 ad-hoc 签名。
+产出 `Flick.app` 与 `Flick.zip`。应用为 ad-hoc 签名。
+图标由 `Resources/icon_1024.png` 经 `sips` + `iconutil` 生成（该文件缺失时自动跳过图标）。
 
 **首次运行从 GitHub Actions / zip 下载的包**，会被 Gatekeeper 隔离，执行一次：
 
 ```bash
-xattr -dr com.apple.quarantine Peek.app
+xattr -dr com.apple.quarantine Flick.app
 ```
 
 或在 Finder 中右键 → 打开。
 
 ## 打开方式
 
-- `Peek /path/to/image_or_folder` 命令行参数
+- `Flick /path/to/image_or_folder` 命令行参数
 - ⌘O 打开面板（可多选文件，或选文件夹）
 - 拖拽文件 / 文件夹到窗口或 Dock 图标
 - Finder "打开方式" / 双击（Info.plist 已声明支持的图片类型，Role = Viewer）
@@ -75,12 +76,13 @@ xattr -dr com.apple.quarantine Peek.app
 
 ```
 Package.swift
-Sources/PeekCore/      纯逻辑库：文件夹扫描排序、图片类型判断、翻页状态机、图片解码缓存
-Sources/Peek/          AppKit 界面与入口（main.swift 手写启动）
-Tests/PeekCoreTests/   swift-testing 单元测试
-Scripts/build_app.sh   手工组装 universal Peek.app + zip
-Scripts/test.sh        无 Xcode 环境下的 swift test 包装
-.github/workflows/     CI：build → test → 打包 → 上传 artifact / Release
+Sources/FlickCore/      纯逻辑库：文件夹扫描排序、图片类型判断、翻页状态机、图片解码缓存
+Sources/Flick/          AppKit 界面与入口（main.swift 手写启动）
+Tests/FlickCoreTests/   swift-testing 单元测试
+Resources/icon_1024.png 应用图标源图
+Scripts/build_app.sh    手工组装 universal Flick.app + 图标 + zip
+Scripts/test.sh         无 Xcode 环境下的 swift test 包装
+.github/workflows/      CI：build → test → 打包 → 上传 artifact / Release
 ```
 
 ## 已知限制

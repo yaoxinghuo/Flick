@@ -2,25 +2,25 @@
 import PackageDescription
 
 let package = Package(
-    name: "Peek",
+    name: "Flick",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .library(name: "PeekCore", targets: ["PeekCore"]),
-        .executable(name: "Peek", targets: ["Peek"]),
+        .library(name: "FlickCore", targets: ["FlickCore"]),
+        .executable(name: "Flick", targets: ["Flick"]),
     ],
     targets: [
         .target(
-            name: "PeekCore"
+            name: "FlickCore"
         ),
         .executableTarget(
-            name: "Peek",
-            dependencies: ["PeekCore"]
+            name: "Flick",
+            dependencies: ["FlickCore"]
         ),
         .testTarget(
-            name: "PeekCoreTests",
-            dependencies: ["PeekCore"]
+            name: "FlickCoreTests",
+            dependencies: ["FlickCore"]
         ),
     ],
     swiftLanguageModes: [.v5]

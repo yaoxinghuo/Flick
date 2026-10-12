@@ -206,12 +206,13 @@ final class FilmstripView: NSView {
     /// dequeue and visible ones update in place.
     func setCurrentIndex(_ index: Int) {
         guard index >= 0, index < urls.count, index != currentIndex else { return }
-        let previous = currentIndex
         currentIndex = index
+        // Re-derive every visible cell's ring from the index — updating only
+        // prev/current left stale rings on reused cells whose indexPath
+        // lookup fails (nil) or that changed index during a manual scroll.
         for item in collectionView.visibleItems() {
-            guard let thumb = item as? ThumbnailItem,
-                  let itemIndex = collectionView.indexPath(for: item)?.item,
-                  itemIndex == index || itemIndex == previous else { continue }
+            guard let thumb = item as? ThumbnailItem else { continue }
+            let itemIndex = collectionView.indexPath(for: item)?.item
             thumb.isCurrent = itemIndex == index
         }
         let path = IndexPath(item: index, section: 0)

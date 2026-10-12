@@ -28,6 +28,13 @@ final class MainWindowController: NSWindowController {
     private var currentRealSize: CGSize = .zero
     private var metadataRequestURL: URL?
     private var infoPanelVisible = UserDefaults.standard.bool(forKey: "infoPanelVisible")
+    /// Floating inspector window; created lazily on first toggle.
+    private var infoPanel: InfoPanelWindow?
+    /// True once the user drags the panel — stops auto-docking until the
+    /// panel is toggled off and on again.
+    private var infoPanelPinned = false
+    /// Guards against treating programmatic setFrame as a user drag.
+    private var positioningInfoPanel = false
     /// Filmstrip defaults to off: hovering the bottom edge reveals it
     /// transiently, the toggle pins it on.
     private var filmstripEnabled: Bool = {
@@ -67,7 +74,7 @@ final class MainWindowController: NSWindowController {
         window.contentView = imageView
         imageView.actionDelegate = self
         imageView.setBackgroundColor(backgroundStyle.color)
-        imageView.setInfoPanelVisible(infoPanelVisible)
+        imageView.setInfoPanelHighlighted(infoPanelVisible)
         imageView.onZoomChanged = { [weak self] in
             self?.considerHighResLoad()
         }
@@ -157,12 +164,13 @@ final class MainWindowController: NSWindowController {
         baseImage = nil
         isAnimatedContent = false
         imageView.setMessage(text)
-        imageView.updateInfoPanel(metadata: nil)
+        updateMetadataViews(nil)
         imageView.setTitleInfo(folder: "", file: "")
         imageView.setStatusIndex(-1, total: 0)
         imageView.setFilmstripFiles([])
         window?.title = Flick.appName
         window?.representedURL = nil
+        syncInfoPanel()
     }
 
     // MARK: - Current image
@@ -187,7 +195,7 @@ final class MainWindowController: NSWindowController {
             baseImage = nil
             isAnimatedContent = false
             imageView.setMessage(L10n.s("No image", "没有图片"))
-            imageView.updateInfoPanel(metadata: nil)
+            updateMetadataViews(nil)
             imageView.setTitleInfo(folder: "", file: "")
             imageView.setStatusIndex(-1, total: 0)
             window?.title = Flick.appName
@@ -212,6 +220,7 @@ final class MainWindowController: NSWindowController {
         )
         prefetchNeighbors()
         loadMetadata()
+        syncInfoPanel()
         imageView.setFilmstripIndex(navigator.index)
 
         if let cached = store.cachedImage(for: file.url, maxPixelSize: Self.displayCap) {
@@ -231,6 +240,7 @@ final class MainWindowController: NSWindowController {
                 self.baseImage = nil
                 self.isAnimatedContent = false
                 self.imageView.setMessage(error.message)
+                self.syncInfoPanel()
             }
         }
     }
@@ -248,6 +258,7 @@ final class MainWindowController: NSWindowController {
                 quarterTurns: rotation
             )
             fitWindowToImage()
+            syncInfoPanel()
         } else if let still = loaded.still {
             isAnimatedContent = false
             baseImage = still
@@ -257,6 +268,7 @@ final class MainWindowController: NSWindowController {
                 displaySize: displaySize(of: loaded.realSize)
             )
             fitWindowToImage()
+            syncInfoPanel()
             considerHighResLoad()
         }
     }
@@ -422,8 +434,65 @@ final class MainWindowController: NSWindowController {
     @objc func toggleInfoPanel(_ sender: Any?) {
         infoPanelVisible.toggle()
         UserDefaults.standard.set(infoPanelVisible, forKey: "infoPanelVisible")
-        imageView.setInfoPanelVisible(infoPanelVisible)
+        imageView.setInfoPanelHighlighted(infoPanelVisible)
+        // Re-dock on every open; a user-dragged position only lives for the
+        // current showing.
+        infoPanelPinned = false
         loadMetadata()
+        syncInfoPanel()
+    }
+
+    // MARK: - Floating info panel
+
+    /// Shows/hides the floating inspector and keeps it docked. Visible only
+    /// while an actual image is on screen (not the placeholder).
+    private func syncInfoPanel() {
+        let show = infoPanelVisible && !imageView.showsPlaceholder
+        if show {
+            let panel = infoPanel ?? makeInfoPanel()
+            if panel.parent != window {
+                panel.parent?.removeChildWindow(panel)
+                window?.addChildWindow(panel, ordered: .above)
+            }
+            panel.orderFront(nil)
+            positionInfoPanel()
+        } else {
+            infoPanel?.parent?.removeChildWindow(infoPanel!)
+            infoPanel?.orderOut(nil)
+        }
+    }
+
+    private func makeInfoPanel() -> InfoPanelWindow {
+        let panel = InfoPanelWindow()
+        panel.onClose = { [weak self] in self?.toggleInfoPanel(nil) }
+        // Track user drags so the panel stops auto-docking once moved.
+        panel.delegate = self
+        infoPanel = panel
+        return panel
+    }
+
+    /// Docks the panel at the window's right edge — outside it when the
+    /// screen has room, overlaid on the image otherwise.
+    private func positionInfoPanel() {
+        guard let panel = infoPanel, let parent = window,
+              !infoPanelPinned else { return }
+        let margin: CGFloat = 8
+        let width = InfoPanelWindow.width
+        let height = min(max(parent.frame.height, 300), 560)
+        var x = parent.frame.maxX + margin
+        if let screen = parent.screen ?? NSScreen.main,
+           x + width > screen.visibleFrame.maxX {
+            // No room beside the window: float it over the image's right side.
+            x = parent.frame.maxX - width - margin
+        }
+        let y = parent.frame.maxY - height
+        let target = NSRect(x: x, y: y, width: width, height: height)
+        // setFrame fires didMove/didResize back into our delegate — bail when
+        // already at the docked spot to break that recursion.
+        guard panel.frame != target else { return }
+        positioningInfoPanel = true
+        panel.setFrame(target, display: true)
+        positioningInfoPanel = false
     }
 
     @objc func toggleFilmstrip(_ sender: Any?) {
@@ -438,16 +507,22 @@ final class MainWindowController: NSWindowController {
         let url = currentFile?.url
         metadataRequestURL = url
         guard let url else {
-            imageView.updateInfoPanel(metadata: nil)
+            updateMetadataViews(nil)
             return
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let metadata = ImageMetadataReader.read(url: url)
             DispatchQueue.main.async {
                 guard self?.metadataRequestURL == url else { return }
-                self?.imageView.updateInfoPanel(metadata: metadata)
+                self?.updateMetadataViews(metadata)
             }
         }
+    }
+
+    /// Metadata feeds both the floating info panel and the status strip.
+    private func updateMetadataViews(_ metadata: ImageMetadata?) {
+        imageView.updateStatusMetadata(metadata)
+        infoPanel?.content.update(metadata: metadata)
     }
 
     @objc func toggleKeepRotation(_ sender: NSMenuItem) {
@@ -653,9 +728,46 @@ extension MainWindowController: ImageViewActionDelegate {
 extension MainWindowController: NSWindowDelegate {
     func windowDidEnterFullScreen(_ notification: Notification) {
         imageView.setFullScreen(true)
+        positionInfoPanel()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
         imageView.setFullScreen(false)
+        positionInfoPanel()
+    }
+
+    /// Re-dock the info panel when the main window moves or resizes. The
+    /// panel also fires didMove while passively following its parent, so a
+    /// user drag is identified by the pointer being inside the panel at the
+    /// time — that pins it in place until the next toggle.
+    func windowDidMove(_ notification: Notification) {
+        if let panel = infoPanel,
+           (notification.object as? NSWindow) === panel {
+            if !positioningInfoPanel,
+               panel.frame.contains(NSEvent.mouseLocation) {
+                infoPanelPinned = true
+            }
+            return
+        }
+        positionInfoPanel()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        // Only re-dock for the main window; the panel resizing itself would
+        // recurse through positionInfoPanel.
+        guard (notification.object as? NSWindow) === window else { return }
+        positionInfoPanel()
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === window else { return }
+        positionInfoPanel()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === window {
+            infoPanel?.parent?.removeChildWindow(infoPanel!)
+            infoPanel?.orderOut(nil)
+        }
     }
 }

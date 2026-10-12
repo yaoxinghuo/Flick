@@ -70,10 +70,7 @@ final class ImageView: NSView {
         return label
     }()
 
-    private let infoPanel = InfoPanelView()
-    private let infoPanelWidth: CGFloat = 260
     private let filmstrip = FilmstripView()
-    private(set) var infoPanelVisible = false
 
     /// Filmstrip preference (persisted): ON = hovering the bottom edge
     /// floats the strip; OFF = it never appears (saves decode work).
@@ -160,12 +157,6 @@ final class ImageView: NSView {
         }
         addSubview(filmstrip)
 
-        infoPanel.isHidden = true
-        infoPanel.onClose = { [weak self] in
-            self?.onToggleInfoPanel?()
-        }
-        addSubview(infoPanel)
-
         for capsule in [titleCapsule, topToolbar!, bottomBar!, statusStrip] {
             capsule.alphaValue = 0
             addSubview(capsule)
@@ -231,13 +222,6 @@ final class ImageView: NSView {
         if stripShown {
             filmstrip.ensureLoaded()
         }
-
-        infoPanel.frame = NSRect(
-            x: bounds.width - infoPanelWidth - 8,
-            y: 8,
-            width: infoPanelWidth,
-            height: bounds.height - 16
-        )
 
         let topSize = topToolbar.fittingSize
         topToolbar.frame = NSRect(
@@ -341,20 +325,13 @@ final class ImageView: NSView {
 
     // MARK: - Info panel / status strip / breadcrumb
 
-    func setInfoPanelVisible(_ visible: Bool) {
-        infoPanelVisible = visible
-        syncInfoPanelHidden()
-        bottomBar.setHighlighted(visible, forTag: ChromeTag.info)
-        needsLayout = true
+    /// Highlights the bottom-bar info button. The panel itself is a floating
+    /// child window owned by the controller, not a subview here.
+    func setInfoPanelHighlighted(_ highlighted: Bool) {
+        bottomBar.setHighlighted(highlighted, forTag: ChromeTag.info)
     }
 
-    /// Panel only exists over an actual image — never on the placeholder.
-    private func syncInfoPanelHidden() {
-        infoPanel.isHidden = !infoPanelVisible || showsPlaceholder
-    }
-
-    func updateInfoPanel(metadata: ImageMetadata?) {
-        infoPanel.update(metadata: metadata)
+    func updateStatusMetadata(_ metadata: ImageMetadata?) {
         guard let metadata else {
             statusItems = []
             pushStatus()
@@ -437,7 +414,6 @@ final class ImageView: NSView {
 
     func setImage(_ image: CGImage?, displaySize: NSSize) {
         showsPlaceholder = false
-        syncInfoPanelHidden()
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
@@ -448,7 +424,6 @@ final class ImageView: NSView {
 
     func setAnimated(_ animated: AnimatedImage, displaySize: NSSize, quarterTurns: Int) {
         showsPlaceholder = false
-        syncInfoPanelHidden()
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
@@ -477,7 +452,6 @@ final class ImageView: NSView {
     /// Placeholder text shown when there is no image (empty state or error).
     func setMessage(_ message: String) {
         showsPlaceholder = true
-        syncInfoPanelHidden()
         setLoading(false)
         scrollView.setImage(nil, displaySize: .zero)
         statusZoomText = ""

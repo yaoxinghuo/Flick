@@ -5,15 +5,14 @@ import FlickCore
 /// metadata. Text is selectable/copyable; missing fields are simply absent.
 final class InfoPanelView: NSVisualEffectView {
     private let textView: NSTextView
+    private let scroll = NSScrollView()
+    private let closeButton = NSButton()
+    private let dragStrip = PanelDragStrip()
+    private let separator = NSBox()
     /// Wired by the container to the controller's close action.
     var onClose: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.drawsBackground = false
-
         let text = NSTextView()
         text.isEditable = false
         text.isSelectable = true
@@ -30,10 +29,13 @@ final class InfoPanelView: NSVisualEffectView {
         text.textContainer?.widthTracksTextView = true
         text.textContainer?.lineFragmentPadding = 4
 
-        scroll.documentView = text
         self.textView = text
 
         super.init(frame: frameRect)
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.documentView = text
         material = .sidebar
         // .withinWindow blends with the image beneath the floating panel
         // (.behindWindow would blend with the desktop behind the app), and
@@ -44,47 +46,57 @@ final class InfoPanelView: NSVisualEffectView {
         layer?.cornerRadius = 10
         layer?.masksToBounds = true
 
-        let closeButton = NSButton(
-            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L10n.s("Close", "关闭"))!,
-            target: self,
-            action: #selector(closeTapped)
-        )
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L10n.s("Close", "关闭"))
+        closeButton.target = self
+        closeButton.action = #selector(closeTapped)
         closeButton.isBordered = false
         closeButton.contentTintColor = .secondaryLabelColor
         closeButton.toolTip = L10n.s("Close Info Panel", "关闭信息面板")
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(closeButton)
 
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(scroll)
-        NSLayoutConstraint.activate([
-            closeButton.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            closeButton.widthAnchor.constraint(equalToConstant: 18),
-            closeButton.heightAnchor.constraint(equalToConstant: 18),
-            scroll.topAnchor.constraint(equalTo: topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
-
-        // 1pt separator on the leading edge
-        let separator = NSBox()
+        // Everything is positioned in layout(), not Auto Layout: a
+        // constraint-based subtree lets NSWindow's layout engine auto-fit
+        // the panel window to the (near-empty) intrinsic content size,
+        // collapsing its height.
         separator.boxType = .separator
-        separator.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scroll)
+        addSubview(dragStrip)
         addSubview(separator)
-        NSLayoutConstraint.activate([
-            separator.leadingAnchor.constraint(equalTo: leadingAnchor),
-            separator.topAnchor.constraint(equalTo: topAnchor),
-            separator.bottomAnchor.constraint(equalTo: bottomAnchor),
-            separator.widthAnchor.constraint(equalToConstant: 1),
-        ])
+        addSubview(closeButton)  // topmost
+        placeSubviews()
+    }
+
+    // resizeSubviews (not layout()) is the hook guaranteed to run on every
+    // frame change for a constraint-free, autoresizing subtree.
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        super.resizeSubviews(withOldSize: oldSize)
+        placeSubviews()
+    }
+
+    private func placeSubviews() {
+        scroll.frame = bounds
+        // Drag strip hugs the top edge; its rightmost 30pt is carved out for
+        // the close button so it can never swallow the button's clicks.
+        dragStrip.frame = NSRect(x: 0, y: bounds.height - 26,
+                                 width: bounds.width - 30, height: 26)
+        separator.frame = NSRect(x: 0, y: 0, width: 1, height: bounds.height)
+        closeButton.frame = NSRect(x: bounds.width - 24, y: bounds.height - 24,
+                                   width: 18, height: 18)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     @objc private func closeTapped() {
         onClose?()
+    }
+
+    /// Transparent strip that hands its mouse events to the panel's drag
+    /// mechanism (`performDrag` re-enters normal window moving) — the
+    /// selectable text view would otherwise swallow drags.
+    private final class PanelDragStrip: NSView {
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
+        override var mouseDownCanMoveWindow: Bool { true }
     }
 
     func update(metadata: ImageMetadata?) {

@@ -1,4 +1,17 @@
 import AppKit
+import FlickCore
+
+/// Reports trackpad page-turn gestures detected by `ImageScrollView`.
+protocol PageSwipeDelegate: AnyObject {
+    /// Whether a turn in `direction` is currently allowed (navigator bounds).
+    func scrollView(_ scrollView: ImageScrollView, canTurn direction: SwipeTracker.Direction) -> Bool
+    /// Finger-following drag offset; damped at edges by the tracker.
+    func scrollView(_ scrollView: ImageScrollView, didDragBy offset: CGFloat)
+    /// Gesture ended without turning — snap back.
+    func scrollViewDidSettle(_ scrollView: ImageScrollView)
+    /// Threshold/velocity reached — perform the turn.
+    func scrollView(_ scrollView: ImageScrollView, didTrigger direction: SwipeTracker.Direction)
+}
 
 enum ZoomMode {
     case fit      // whole image inside the window
@@ -33,12 +46,18 @@ final class ImageScrollView: NSScrollView {
     /// Called whenever the effective magnification changes.
     var onMagnificationChanged: ((CGFloat) -> Void)?
 
+    weak var pageSwipeDelegate: PageSwipeDelegate?
+    private var swipeTracker = SwipeTracker()
+    private var lastSwipeTriggerTime: TimeInterval = -.greatestFiniteMagnitude
+
     private var frameObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         contentView = CenteringClipView(frame: bounds)
-        documentView = ImageDocumentView(frame: .zero)
+        let document = ImageDocumentView(frame: .zero)
+        document.wantsLayer = true // needed for the page-drag transform
+        documentView = document
         hasVerticalScroller = true
         hasHorizontalScroller = true
         scrollerStyle = .overlay
@@ -110,6 +129,7 @@ final class ImageScrollView: NSScrollView {
     func setImage(_ image: CGImage?) {
         imageSize = image.map { NSSize(width: $0.width, height: $0.height) } ?? .zero
         document.image = image
+        document.layer?.transform = CATransform3DIdentity
         document.frame = NSRect(origin: .zero, size: imageSize)
         zoomMode = .fit
         updateMagnificationRange()
@@ -228,6 +248,76 @@ final class ImageScrollView: NSScrollView {
 
     override func smartMagnify(with event: NSEvent) {
         toggleSmartZoom(atDocPoint: document.convert(event.locationInWindow, from: nil))
+    }
+
+    // MARK: - Page-turn gestures
+
+    /// Route: trackpad two-finger swipes drive the page tracker only while the
+    /// image cannot be panned on either axis; anything else (mouse wheel,
+    /// momentum, zoomed-in content) is regular scrolling.
+    override func scrollWheel(with event: NSEvent) {
+        guard event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else {
+            super.scrollWheel(with: event)
+            return
+        }
+        guard !canPan else {
+            swipeTracker.reset()
+            super.scrollWheel(with: event)
+            return
+        }
+
+        swipeTracker.viewportWidth = Double(contentView.frame.width)
+        swipeTracker.canGoNext = pageSwipeDelegate?.scrollView(self, canTurn: .next) ?? false
+        swipeTracker.canGoPrevious = pageSwipeDelegate?.scrollView(self, canTurn: .previous) ?? false
+
+        guard let trackerEvent = Self.trackerEvent(from: event) else { return }
+        switch swipeTracker.handle(trackerEvent) {
+        case .none:
+            break
+        case .drag(let offset):
+            pageSwipeDelegate?.scrollView(self, didDragBy: CGFloat(offset))
+        case .trigger(let direction):
+            lastSwipeTriggerTime = event.timestamp
+            pageSwipeDelegate?.scrollView(self, didTrigger: direction)
+        case .settle:
+            pageSwipeDelegate?.scrollViewDidSettle(self)
+        }
+    }
+
+    /// Fallback path for swipes delivered as `swipe(with:)` (e.g. three-finger
+    /// or differently-configured trackpads). Deduplicated against the tracker
+    /// so the same gesture can't turn twice.
+    override func swipe(with event: NSEvent) {
+        guard !canPan,
+              swipeTracker.state == .idle,
+              event.timestamp - lastSwipeTriggerTime > 0.6 else {
+            return
+        }
+        if event.deltaX < -0.3 {
+            lastSwipeTriggerTime = event.timestamp
+            pageSwipeDelegate?.scrollView(self, didTrigger: .next)
+        } else if event.deltaX > 0.3 {
+            lastSwipeTriggerTime = event.timestamp
+            pageSwipeDelegate?.scrollView(self, didTrigger: .previous)
+        }
+    }
+
+    private static func trackerEvent(from event: NSEvent) -> SwipeTracker.Event? {
+        let phase = event.phase
+        if phase.contains(.began) {
+            return .began
+        } else if phase.contains(.changed) {
+            return .changed(
+                dx: Double(event.scrollingDeltaX),
+                dy: Double(event.scrollingDeltaY),
+                at: event.timestamp
+            )
+        } else if phase.contains(.ended) {
+            return .ended(at: event.timestamp)
+        } else if phase.contains(.cancelled) {
+            return .cancelled
+        }
+        return nil
     }
 
     // MARK: - Panning (mouse drag)

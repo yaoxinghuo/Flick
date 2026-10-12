@@ -81,6 +81,7 @@ enum MenuBuilder {
         menu.addItem(make("顺时针旋转", #selector(MainWindowController.rotateRight(_:)), "r"))
         menu.addItem(make("逆时针旋转", #selector(MainWindowController.rotateLeft(_:)), "r", [.command, .shift]))
         menu.addItem(make("切换图片时保持旋转角度", #selector(MainWindowController.toggleKeepRotation(_:))))
+        menu.addItem(make("循环浏览", #selector(MainWindowController.toggleWrapAround(_:))))
         menu.addItem(.separator())
 
         let backgroundItem = NSMenuItem(title: "背景", action: nil, keyEquivalent: "")

@@ -24,6 +24,12 @@ final class MainWindowController: NSWindowController {
     }
     private var keepRotationOnChange =
         UserDefaults.standard.bool(forKey: "keepRotationOnChange")
+    private var wrapAround = UserDefaults.standard.bool(forKey: "wrapAround") {
+        didSet {
+            UserDefaults.standard.set(wrapAround, forKey: "wrapAround")
+            navigator.wrapsAround = wrapAround
+        }
+    }
 
     init() {
         let window = NSWindow(
@@ -90,6 +96,7 @@ final class MainWindowController: NSWindowController {
             files.firstIndex { $0.url.standardizedFileURL == t }
         } ?? 0
         navigator.reset(count: files.count, index: index)
+        navigator.wrapsAround = wrapAround
         showCurrent()
     }
 
@@ -102,6 +109,7 @@ final class MainWindowController: NSWindowController {
         files = ImageFileScanner.sorted(images, by: sortOrder)
         currentFolder = nil
         navigator.reset(count: files.count, index: 0)
+        navigator.wrapsAround = wrapAround
         showCurrent()
     }
 
@@ -167,13 +175,16 @@ final class MainWindowController: NSWindowController {
         ImageRotator.rotate(base, quarterTurns: rotation)
     }
 
-    /// Keeps the immediate neighbours warm so stepping feels instant.
+    /// Keeps the immediate neighbours warm so stepping feels instant; loads
+    /// falling out of the ±2 window are cancelled.
     private func prefetchNeighbors() {
+        var urls = Set<URL>()
         for offset in [-2, -1, 1, 2] {
             let i = navigator.index + offset
             guard i >= 0, i < files.count else { continue }
-            store.prefetch(files[i].url)
+            urls.insert(files[i].url)
         }
+        store.prefetch(urls: urls)
     }
 
     private func applySortOrder() {
@@ -223,6 +234,10 @@ final class MainWindowController: NSWindowController {
     @objc func toggleKeepRotation(_ sender: NSMenuItem) {
         keepRotationOnChange.toggle()
         UserDefaults.standard.set(keepRotationOnChange, forKey: "keepRotationOnChange")
+    }
+
+    @objc func toggleWrapAround(_ sender: NSMenuItem) {
+        wrapAround.toggle()
     }
 
     @objc func toggleFullScreen(_ sender: Any?) {
@@ -305,6 +320,9 @@ final class MainWindowController: NSWindowController {
         case #selector(toggleKeepRotation(_:)):
             menuItem.state = keepRotationOnChange ? .on : .off
             return true
+        case #selector(toggleWrapAround(_:)):
+            menuItem.state = wrapAround ? .on : .off
+            return true
         case #selector(setBackground(_:)):
             menuItem.state = (menuItem.representedObject as? String) == backgroundStyle.rawValue ? .on : .off
             return true
@@ -334,6 +352,27 @@ final class MainWindowController: NSWindowController {
     private func goLast() {
         if navigator.goLast() { showCurrent() }
     }
+
+    // MARK: - Swipe page turns
+
+    /// Animated turn triggered by the trackpad swipe tracker. The navigator
+    /// advances synchronously (so rapid swipes stay consistent); the slide
+    /// animation is drawn on top of the swap.
+    private func turnPage(_ direction: SwipeTracker.Direction) {
+        let outgoing = baseImage.map(displayImage(from:))
+        let moved = direction == .next ? navigator.goNext() : navigator.goPrevious()
+        guard moved else {
+            // Shouldn't happen — the tracker already suppresses disallowed
+            // turns — but snap back defensively.
+            imageView.scrollViewDidSettle(imageView.scrollView)
+            return
+        }
+        let incoming = currentFile
+            .flatMap { store.cachedImage(for: $0.url) }
+            .map(displayImage(from:))
+        imageView.commitPageTurn(direction: direction, outgoing: outgoing, incoming: incoming)
+        showCurrent()
+    }
 }
 
 extension MainWindowController: ImageViewActionDelegate {
@@ -341,6 +380,14 @@ extension MainWindowController: ImageViewActionDelegate {
     func imageViewDidRequestPrevious(_ view: ImageView) { goPrevious() }
     func imageViewDidRequestFirst(_ view: ImageView) { goFirst() }
     func imageViewDidRequestLast(_ view: ImageView) { goLast() }
+
+    func imageViewCanTurn(_ view: ImageView, direction: SwipeTracker.Direction) -> Bool {
+        direction == .next ? navigator.canGoNext : navigator.canGoPrevious
+    }
+
+    func imageViewDidRequestSwipeTurn(_ view: ImageView, direction: SwipeTracker.Direction) {
+        turnPage(direction)
+    }
 
     func imageViewDidRequestToggleFullScreen(_ view: ImageView) {
         window?.toggleFullScreen(nil)

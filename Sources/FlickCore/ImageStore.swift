@@ -43,6 +43,8 @@ public final class ImageStore {
         qos: .userInitiated,
         attributes: .concurrent
     )
+    /// In-flight prefetch loads keyed by URL; main-thread only.
+    private var prefetchTasks: [URL: ImageLoadTask] = [:]
 
     public init(cacheCountLimit: Int = 12) {
         cache.countLimit = cacheCountLimit
@@ -87,10 +89,19 @@ public final class ImageStore {
         return task
     }
 
-    /// Warms the cache without reporting a result (used for prefetching).
-    @discardableResult
-    public func prefetch(_ url: URL) -> ImageLoadTask {
-        load(url) { _ in }
+    /// Keeps exactly `urls` prefetched: starts loads for URLs not yet cached
+    /// or in-flight, and cancels tasks for URLs that fell out of the window.
+    /// Main-thread only.
+    public func prefetch(urls: Set<URL>) {
+        for (url, task) in prefetchTasks where !urls.contains(url) {
+            task.cancel()
+            prefetchTasks.removeValue(forKey: url)
+        }
+        for url in urls where cachedImage(for: url) == nil && prefetchTasks[url] == nil {
+            prefetchTasks[url] = load(url) { [weak self] _ in
+                self?.prefetchTasks.removeValue(forKey: url)
+            }
+        }
     }
 
     /// Decodes via ImageIO. `kCGImageSourceCreateThumbnailWithTransform` applies

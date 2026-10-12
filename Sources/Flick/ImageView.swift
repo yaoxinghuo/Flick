@@ -1,4 +1,5 @@
 import AppKit
+import FlickCore
 
 protocol ImageViewActionDelegate: AnyObject {
     func imageViewDidRequestNext(_ view: ImageView)
@@ -7,6 +8,8 @@ protocol ImageViewActionDelegate: AnyObject {
     func imageViewDidRequestLast(_ view: ImageView)
     func imageViewDidRequestToggleFullScreen(_ view: ImageView)
     func imageViewDidRequestExitFullScreen(_ view: ImageView)
+    func imageViewCanTurn(_ view: ImageView, direction: SwipeTracker.Direction) -> Bool
+    func imageViewDidRequestSwipeTurn(_ view: ImageView, direction: SwipeTracker.Direction)
     func imageView(_ view: ImageView, didReceiveDroppedURLs urls: [URL])
 }
 
@@ -42,6 +45,7 @@ final class ImageView: NSView {
     private var isFullScreen = false
     private var cursorIsHidden = false
     private var cursorHideWorkItem: DispatchWorkItem?
+    private var animator: PageTurnAnimator?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -66,6 +70,9 @@ final class ImageView: NSView {
         zoomHUD.autoresizingMask = [.minXMargin, .maxYMargin]
         addSubview(zoomHUD)
 
+        animator = PageTurnAnimator(hostView: self, scrollView: scrollView)
+        scrollView.pageSwipeDelegate = self
+
         registerForDraggedTypes([.fileURL])
     }
 
@@ -77,6 +84,7 @@ final class ImageView: NSView {
     func setImage(_ image: CGImage?) {
         messageLabel.isHidden = true
         setLoading(false)
+        animator?.finishImmediately()
         scrollView.setImage(image)
     }
 
@@ -105,6 +113,39 @@ final class ImageView: NSView {
     func setBackgroundColor(_ color: NSColor) {
         layer?.backgroundColor = color.cgColor
         scrollView.backgroundColor = color
+    }
+
+    // MARK: - Page-turn animation
+
+    /// Runs the slide transition for a committed swipe. Called before the real
+    /// image is swapped in underneath the overlay.
+    func commitPageTurn(
+        direction: SwipeTracker.Direction,
+        outgoing: CGImage?,
+        incoming: CGImage?
+    ) {
+        animator?.commit(
+            direction: direction,
+            outgoing: outgoing,
+            incoming: incoming,
+            fittedRect: { imageSize in
+                Self.aspectFitRect(imageSize: imageSize, in: scrollView.bounds)
+            }
+        )
+    }
+
+    /// Aspect-fit rect of `imageSize` centered inside `rect` (same math the
+    /// scroll view's fit mode produces).
+    static func aspectFitRect(imageSize: NSSize, in rect: NSRect) -> NSRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return rect }
+        let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
+        let size = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return NSRect(
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     // MARK: - Full screen
@@ -211,5 +252,23 @@ final class ImageView: NSView {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL]
+    }
+}
+
+extension ImageView: PageSwipeDelegate {
+    func scrollView(_ scrollView: ImageScrollView, canTurn direction: SwipeTracker.Direction) -> Bool {
+        actionDelegate?.imageViewCanTurn(self, direction: direction) ?? false
+    }
+
+    func scrollView(_ scrollView: ImageScrollView, didDragBy offset: CGFloat) {
+        animator?.drag(by: offset)
+    }
+
+    func scrollViewDidSettle(_ scrollView: ImageScrollView) {
+        animator?.cancel()
+    }
+
+    func scrollView(_ scrollView: ImageScrollView, didTrigger direction: SwipeTracker.Direction) {
+        actionDelegate?.imageViewDidRequestSwipeTurn(self, direction: direction)
     }
 }

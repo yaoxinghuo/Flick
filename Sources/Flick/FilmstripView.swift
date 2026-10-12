@@ -39,6 +39,14 @@ private final class ThumbnailItem: NSCollectionViewItem {
     private var request: ThumbnailRequest?
     private var generation = 0
 
+    /// The selection ring is driven by our own `isCurrent` flag, not the
+    /// collection view's `isSelected` — reused cells kept a stale highlight
+    /// (two rings visible) because `isSelected` isn't reliably reset on
+    /// dequeue.
+    var isCurrent = false {
+        didSet { updateHighlight() }
+    }
+
     /// NSCollectionView instantiates items via `init()` and never calls
     /// `loadView` for class-registered items — build the view eagerly here.
     override init(nibName nibNameOrNil: NSNib.Name?, bundle nibBundleOrNil: Bundle?) {
@@ -49,19 +57,16 @@ private final class ThumbnailItem: NSCollectionViewItem {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    override var isSelected: Bool {
-        didSet { updateHighlight() }
-    }
-
     private func updateHighlight() {
-        view.layer?.borderWidth = isSelected ? 2 : 0
+        view.layer?.borderWidth = isCurrent ? 2 : 0
         view.layer?.borderColor = NSColor.controlAccentColor.cgColor
-        view.layer?.backgroundColor = isSelected
+        view.layer?.backgroundColor = isCurrent
             ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
             : nil
     }
 
-    func configure(url: URL, store: ThumbnailStore, cached: CGImage?) {
+    func configure(url: URL, isCurrent: Bool, store: ThumbnailStore, cached: CGImage?) {
+        self.isCurrent = isCurrent
         request?.cancel()
         generation += 1
         let gen = generation
@@ -79,6 +84,7 @@ private final class ThumbnailItem: NSCollectionViewItem {
         super.prepareForReuse()
         request?.cancel()
         request = nil
+        isCurrent = false
         thumbView.image = nil
     }
 }
@@ -125,9 +131,9 @@ final class FilmstripView: NSView {
 
         let scroll = NSScrollView()
         scroll.documentView = collectionView
-        scroll.hasHorizontalScroller = true
-        scroll.scrollerStyle = .overlay
-        scroll.autohidesScrollers = true
+        // Scrollable but chrome-free — a visible scrollbar looks wrong on a
+        // floating capsule.
+        scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
         scroll.autoresizingMask = [.width, .height]
         scroll.frame = bounds
@@ -165,9 +171,18 @@ final class FilmstripView: NSView {
     }
 
     /// Highlights `index` and scrolls it to the strip's horizontal center.
+    /// The ring is a data flag on each item, so offscreen cells get it at
+    /// dequeue and visible ones update in place.
     func setCurrentIndex(_ index: Int) {
         guard index >= 0, index < urls.count, index != currentIndex else { return }
+        let previous = currentIndex
         currentIndex = index
+        for item in collectionView.visibleItems() {
+            guard let thumb = item as? ThumbnailItem,
+                  let itemIndex = collectionView.indexPath(for: item)?.item,
+                  itemIndex == index || itemIndex == previous else { continue }
+            thumb.isCurrent = itemIndex == index
+        }
         let path = IndexPath(item: index, section: 0)
         suppressSelectCallback = true
         collectionView.selectItems(at: [path], scrollPosition: [])
@@ -212,6 +227,7 @@ extension FilmstripView: NSCollectionViewDataSource, NSCollectionViewDelegate {
         let url = urls[indexPath.item]
         (item as? ThumbnailItem)?.configure(
             url: url,
+            isCurrent: indexPath.item == currentIndex,
             store: thumbnailStore,
             cached: thumbnailStore.cachedThumbnail(for: url)
         )

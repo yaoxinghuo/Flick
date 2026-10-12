@@ -75,9 +75,8 @@ final class ImageView: NSView {
     private let filmstrip = FilmstripView()
     private(set) var infoPanelVisible = false
 
-    /// User's filmstrip preference (persisted by the controller). The strip
-    /// floats over the image; hovering near the bottom edge reveals it
-    /// transiently even when the preference is off.
+    /// Filmstrip preference (persisted): ON = hovering the bottom edge
+    /// floats the strip; OFF = it never appears (saves decode work).
     private(set) var filmstripEnabled = false
     private var filmstripTransient = false
     private var filmstripHasContent = false
@@ -196,8 +195,9 @@ final class ImageView: NSView {
         super.layout()
         scrollView.frame = bounds
 
-        let stripVisible = filmstripEnabled || filmstripTransient
-        let stripShown = stripVisible && filmstripHasContent
+        // The strip exists only while the pointer is in the bottom zone and
+        /// the preference allows hover reveal.
+        let stripShown = filmstripEnabled && filmstripTransient && filmstripHasContent
 
         // Bottom cluster stacks like Pixea: status strip hugs the bottom-left
         // corner, the control capsule sits just above it, and the filmstrip
@@ -217,7 +217,7 @@ final class ImageView: NSView {
             width: bottomSize.width,
             height: bottomSize.height
         )
-        let stripWidth = filmstrip.preferredWidth(maxWidth: bounds.width - 48)
+        let stripWidth = filmstrip.preferredWidth(maxWidth: bounds.width - 24)
         filmstrip.frame = NSRect(
             x: (bounds.width - stripWidth) / 2,
             y: bottomBar.frame.maxY + 8,
@@ -270,19 +270,14 @@ final class ImageView: NSView {
     }
 
     private func setChrome(alpha: CGFloat) {
+        // Placeholder state has no capsules at all; traffic lights stay
+        // visible at all times (per user preference over Pixea's hover-only).
+        let target = showsPlaceholder ? 0 : alpha
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
             for view in chromeViews {
-                view.animator().alphaValue = alpha
+                view.animator().alphaValue = target
             }
-        }
-        setTrafficLightsHidden(alpha == 0)
-    }
-
-    private func setTrafficLightsHidden(_ hidden: Bool) {
-        for buttonType in [NSWindow.ButtonType.closeButton,
-                           .miniaturizeButton, .zoomButton] {
-            window?.standardWindowButton(buttonType)?.isHidden = hidden
         }
     }
 
@@ -325,8 +320,7 @@ final class ImageView: NSView {
 
     /// Bottom edge height where hovering floats the strip / pins chrome.
     private var bottomHotZone: CGFloat {
-        let stripOut = filmstripEnabled || filmstripTransient
-        return stripOut ? filmstrip.frame.maxY + 16 : bottomBar.frame.maxY + 14
+        filmstripTransient ? filmstrip.frame.maxY + 16 : bottomBar.frame.maxY + 14
     }
 
     /// Regions where the pointer pins chrome visible: every capsule, the
@@ -344,9 +338,14 @@ final class ImageView: NSView {
 
     func setInfoPanelVisible(_ visible: Bool) {
         infoPanelVisible = visible
-        infoPanel.isHidden = !visible
+        syncInfoPanelHidden()
         bottomBar.setHighlighted(visible, forTag: ChromeTag.info)
         needsLayout = true
+    }
+
+    /// Panel only exists over an actual image — never on the placeholder.
+    private func syncInfoPanelHidden() {
+        infoPanel.isHidden = !infoPanelVisible || showsPlaceholder
     }
 
     func updateInfoPanel(metadata: ImageMetadata?) {
@@ -423,6 +422,7 @@ final class ImageView: NSView {
 
     func setImage(_ image: CGImage?, displaySize: NSSize) {
         showsPlaceholder = false
+        syncInfoPanelHidden()
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
@@ -433,6 +433,7 @@ final class ImageView: NSView {
 
     func setAnimated(_ animated: AnimatedImage, displaySize: NSSize, quarterTurns: Int) {
         showsPlaceholder = false
+        syncInfoPanelHidden()
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
@@ -461,6 +462,7 @@ final class ImageView: NSView {
     /// Placeholder text shown when there is no image (empty state or error).
     func setMessage(_ message: String) {
         showsPlaceholder = true
+        syncInfoPanelHidden()
         setLoading(false)
         scrollView.setImage(nil, displaySize: .zero)
         statusZoomText = ""
@@ -588,12 +590,11 @@ final class ImageView: NSView {
             }
             scheduleCursorHide()
         }
-        // Hover near the bottom edge floats the strip when the persisted
-        /// preference is off; moving back up dismisses it promptly.
-        if !filmstripEnabled, filmstripHasContent, let point = lastMousePoint {
-            let want = point.y < (filmstripTransient
-                ? filmstrip.frame.maxY + 16
-                : 160)
+        // Hover near the bottom edge floats the strip — but only when the
+        /// preference is ON; off means never (saves decode work).
+        if let point = lastMousePoint {
+            let want = filmstripEnabled && filmstripHasContent
+                && point.y < (filmstripTransient ? filmstrip.frame.maxY + 16 : 160)
             if want != filmstripTransient {
                 filmstripTransient = want
                 needsLayout = true

@@ -48,7 +48,7 @@ final class MainWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 750),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
             styleMask: [.titled, .closable, .miniaturizable, .resizable,
                         .fullSizeContentView],
             backing: .buffered,

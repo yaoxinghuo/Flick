@@ -80,6 +80,9 @@ final class ImageView: NSView {
     private(set) var filmstripEnabled = false
     private var filmstripTransient = false
     private var filmstripHasContent = false
+    /// Delays hiding the strip after the pointer leaves the bottom zone —
+    /// instant dismissal felt twitchy when the mouse overshot by a pixel.
+    private var filmstripHideWorkItem: DispatchWorkItem?
 
     // Chrome: floating capsules + breadcrumb + status strip. IUO because the
     /// button target is `self`, which only exists after super.init.
@@ -314,6 +317,8 @@ final class ImageView: NSView {
         guard chromeVisible || filmstripTransient else { return }
         chromeVisible = false
         setChrome(alpha: 0)
+        filmstripHideWorkItem?.cancel()
+        filmstripHideWorkItem = nil
         filmstripTransient = false
         needsLayout = true
     }
@@ -393,7 +398,11 @@ final class ImageView: NSView {
 
     func setFilmstripEnabled(_ enabled: Bool) {
         filmstripEnabled = enabled
-        if !enabled { filmstripTransient = false }
+        if !enabled {
+            filmstripHideWorkItem?.cancel()
+            filmstripHideWorkItem = nil
+            filmstripTransient = false
+        }
         bottomBar.setHighlighted(enabled, forTag: ChromeTag.filmstrip)
         needsLayout = true
     }
@@ -542,6 +551,8 @@ final class ImageView: NSView {
     func setFullScreen(_ fullScreen: Bool) {
         isFullScreen = fullScreen
         filmstripTransient = false
+        filmstripHideWorkItem?.cancel()
+        filmstripHideWorkItem = nil
         cursorHideWorkItem?.cancel()
         if fullScreen {
             scheduleCursorHide()
@@ -591,13 +602,25 @@ final class ImageView: NSView {
             scheduleCursorHide()
         }
         // Hover near the bottom edge floats the strip — but only when the
-        /// preference is ON; off means never (saves decode work).
+        /// preference is ON; off means never (saves decode work). Hiding is
+        /// delayed so briefly overshooting the zone doesn't yank it away.
         if let point = lastMousePoint {
-            let want = filmstripEnabled && filmstripHasContent
+            let inZone = filmstripEnabled && filmstripHasContent
                 && point.y < (filmstripTransient ? filmstrip.frame.maxY + 16 : 160)
-            if want != filmstripTransient {
-                filmstripTransient = want
-                needsLayout = true
+            if inZone {
+                filmstripHideWorkItem?.cancel()
+                if !filmstripTransient {
+                    filmstripTransient = true
+                    needsLayout = true
+                }
+            } else if filmstripTransient, filmstripHideWorkItem == nil {
+                let item = DispatchWorkItem { [weak self] in
+                    self?.filmstripHideWorkItem = nil
+                    self?.filmstripTransient = false
+                    self?.needsLayout = true
+                }
+                filmstripHideWorkItem = item
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: item)
             }
         }
         showChrome()

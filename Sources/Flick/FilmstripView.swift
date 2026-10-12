@@ -131,9 +131,12 @@ final class FilmstripView: NSView {
 
         let scroll = NSScrollView()
         scroll.documentView = collectionView
-        // Scrollable but chrome-free — a visible scrollbar looks wrong on a
-        // floating capsule.
+        // Scrollable but chrome-free — both scrollers off, overlay style as
+        // a belt so nothing ever draws a track on the capsule.
         scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
+        scroll.scrollerStyle = .overlay
+        scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.autoresizingMask = [.width, .height]
         scroll.frame = bounds

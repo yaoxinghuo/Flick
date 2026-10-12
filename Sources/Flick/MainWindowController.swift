@@ -28,6 +28,11 @@ final class MainWindowController: NSWindowController {
     private var currentRealSize: CGSize = .zero
     private var metadataRequestURL: URL?
     private var infoPanelVisible = UserDefaults.standard.bool(forKey: "infoPanelVisible")
+    /// Filmstrip defaults to on until the user toggles it off.
+    private var filmstripEnabled: Bool = {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: "filmstripEnabled") as? Bool ?? true
+    }()
     private var backgroundStyle = BackgroundStyle.load() {
         didSet { backgroundStyle.save() }
     }
@@ -59,6 +64,10 @@ final class MainWindowController: NSWindowController {
         imageView.setInfoPanelVisible(infoPanelVisible)
         imageView.onZoomChanged = { [weak self] in
             self?.considerHighResLoad()
+        }
+        imageView.setFilmstripEnabled(filmstripEnabled)
+        imageView.onFilmstripSelect = { [weak self] index in
+            self?.goTo(index)
         }
         window.makeFirstResponder(imageView)
         imageView.setMessage("打开图片或文件夹开始浏览（⌘O），或将图片拖入窗口")
@@ -104,6 +113,7 @@ final class MainWindowController: NSWindowController {
         }
         files = ImageFileScanner.sorted(scanned, by: sortOrder)
         currentFolder = folder
+        imageView.setFilmstripFiles(files.map(\.url))
         let target = file?.standardizedFileURL
         let index = target.flatMap { t in
             files.firstIndex { $0.url.standardizedFileURL == t }
@@ -121,6 +131,7 @@ final class MainWindowController: NSWindowController {
         }
         files = ImageFileScanner.sorted(images, by: sortOrder)
         currentFolder = nil
+        imageView.setFilmstripFiles(files.map(\.url))
         navigator.reset(count: files.count, index: 0)
         navigator.wrapsAround = wrapAround
         showCurrent()
@@ -136,6 +147,7 @@ final class MainWindowController: NSWindowController {
         isAnimatedContent = false
         imageView.setMessage(text)
         imageView.updateInfoPanel(metadata: nil)
+        imageView.setFilmstripFiles([])
         window?.title = Flick.appName
         window?.representedURL = nil
     }
@@ -176,6 +188,7 @@ final class MainWindowController: NSWindowController {
         window?.representedURL = file.url
         prefetchNeighbors()
         updateInfoPanelIfVisible()
+        imageView.setFilmstripIndex(navigator.index)
 
         if let cached = store.cachedImage(for: file.url, maxPixelSize: Self.displayCap) {
             present(loaded: cached)
@@ -338,6 +351,12 @@ final class MainWindowController: NSWindowController {
         updateInfoPanelIfVisible()
     }
 
+    @objc func toggleFilmstrip(_ sender: Any?) {
+        filmstripEnabled.toggle()
+        UserDefaults.standard.set(filmstripEnabled, forKey: "filmstripEnabled")
+        imageView.setFilmstripEnabled(filmstripEnabled)
+    }
+
     /// Loads metadata off the main thread whenever the panel is on screen.
     private func updateInfoPanelIfVisible() {
         guard infoPanelVisible else { return }
@@ -417,7 +436,7 @@ final class MainWindowController: NSWindowController {
         翻页：← / →、空格（下一张）、⇧空格（上一张）、Home / End，或双指水平滑动
         缩放：⌘+ / ⌘-、⌘0 适应、⌘1 实际大小、⌘2 填满、捏合、双击
         旋转：⌘R 顺时针、⇧⌘R 逆时针；全屏：F 或 ⌃⌘F
-        动图：P 暂停 / 继续；信息面板：⌘I
+        动图：P 暂停 / 继续；信息面板：⌘I；缩略图条：T
         排序：显示菜单 > 排序方式
         打开单张图片时自动浏览其所在文件夹的所有图片。
         """
@@ -450,6 +469,9 @@ final class MainWindowController: NSWindowController {
             return isAnimatedContent
         case #selector(toggleInfoPanel(_:)):
             menuItem.state = infoPanelVisible ? .on : .off
+            return true
+        case #selector(toggleFilmstrip(_:)):
+            menuItem.state = filmstripEnabled ? .on : .off
             return true
         case #selector(toggleKeepRotation(_:)):
             menuItem.state = keepRotationOnChange ? .on : .off
@@ -485,6 +507,10 @@ final class MainWindowController: NSWindowController {
 
     private func goLast() {
         if navigator.goLast() { showCurrent() }
+    }
+
+    private func goTo(_ index: Int) {
+        if navigator.goTo(index) { showCurrent() }
     }
 
     // MARK: - Swipe page turns

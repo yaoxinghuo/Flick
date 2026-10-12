@@ -42,7 +42,16 @@ final class ImageView: NSView {
     private let zoomHUD = ZoomHUDView()
     private let infoPanel = InfoPanelView()
     private let infoPanelWidth: CGFloat = 260
+    private let filmstrip = FilmstripView()
     private(set) var infoPanelVisible = false
+
+    /// User's filmstrip preference (persisted by the controller). In full
+    /// screen the strip hides and only floats up on bottom-edge hover.
+    private(set) var filmstripEnabled = false
+    private var filmstripTransient = false
+    private var filmstripHideWorkItem: DispatchWorkItem?
+
+    var onFilmstripSelect: ((Int) -> Void)?
 
     /// Called whenever magnification changes — the controller uses it to
     /// decide whether a higher-resolution decode is needed.
@@ -68,6 +77,12 @@ final class ImageView: NSView {
         infoPanel.isHidden = true
         addSubview(infoPanel)
 
+        filmstrip.isHidden = true
+        filmstrip.onSelect = { [weak self] index in
+            self?.onFilmstripSelect?(index)
+        }
+        addSubview(filmstrip)
+
         addSubview(spinner)
         addSubview(messageLabel)
         NSLayoutConstraint.activate([
@@ -90,22 +105,34 @@ final class ImageView: NSView {
 
     // MARK: - Layout
 
-    /// Sidebar layout: scroll view takes everything left of the info panel.
+    /// Sidebar layout: scroll view takes the space left of the info panel and
+    /// above the filmstrip. In full screen the strip floats over the content
+    /// instead of shrinking it, so hover reveal doesn't refit the image.
     override func layout() {
         super.layout()
         let panelWidth = infoPanelVisible ? infoPanelWidth : 0
+        let stripVisible = filmstripEnabled && (!isFullScreen || filmstripTransient)
+        let floating = isFullScreen
+        let stripHeight = stripVisible ? FilmstripView.height : 0
+
         scrollView.frame = NSRect(
-            x: 0, y: 0,
-            width: bounds.width - panelWidth, height: bounds.height
+            x: 0, y: floating ? 0 : stripHeight,
+            width: bounds.width - panelWidth,
+            height: bounds.height - (floating ? 0 : stripHeight)
         )
         infoPanel.frame = NSRect(
             x: bounds.width - panelWidth, y: 0,
             width: panelWidth, height: bounds.height
         )
-        // Keep the HUD pinned to the scroll view's right edge, not the panel's.
+        filmstrip.frame = NSRect(
+            x: 0, y: 0,
+            width: bounds.width - panelWidth, height: stripHeight
+        )
+        filmstrip.isHidden = stripHeight == 0
+        // Keep the HUD pinned to the scroll view's right edge, above the strip.
         zoomHUD.frame.origin = NSPoint(
             x: scrollView.frame.maxX - zoomHUD.frame.width - 12,
-            y: 12
+            y: scrollView.frame.minY + 12
         )
     }
 
@@ -119,6 +146,26 @@ final class ImageView: NSView {
 
     func updateInfoPanel(metadata: ImageMetadata?) {
         infoPanel.update(metadata: metadata)
+    }
+
+    // MARK: - Filmstrip
+
+    func setFilmstripEnabled(_ enabled: Bool) {
+        filmstripEnabled = enabled
+        if !enabled { filmstripTransient = false }
+        needsLayout = true
+    }
+
+    func setFilmstripFiles(_ urls: [URL]) {
+        filmstrip.setFiles(urls)
+    }
+
+    func setFilmstripIndex(_ index: Int) {
+        filmstrip.setCurrentIndex(index)
+    }
+
+    func cachedFilmstripThumbnail(for index: Int) -> CGImage? {
+        filmstrip.cachedThumbnail(for: index)
     }
 
     // MARK: - Content
@@ -214,6 +261,9 @@ final class ImageView: NSView {
 
     func setFullScreen(_ fullScreen: Bool) {
         isFullScreen = fullScreen
+        filmstripTransient = false
+        filmstripHideWorkItem?.cancel()
+        needsLayout = true
         cursorHideWorkItem?.cancel()
         if fullScreen {
             scheduleCursorHide()
@@ -257,6 +307,28 @@ final class ImageView: NSView {
             NSCursor.unhide()
         }
         scheduleCursorHide()
+        updateFilmstripHover(mouseY: event.locationInWindow.y)
+    }
+
+    /// Bottom-edge hover reveals the filmstrip in full screen. Hysteresis on
+    /// the hide threshold keeps it from flickering at the boundary.
+    private func updateFilmstripHover(mouseY: CGFloat) {
+        guard filmstripEnabled else { return }
+        if !filmstripTransient, mouseY < 44 {
+            filmstripHideWorkItem?.cancel()
+            filmstripTransient = true
+            needsLayout = true
+        } else if filmstripTransient, mouseY > FilmstripView.height + 24 {
+            filmstripHideWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                self?.filmstripTransient = false
+                self?.needsLayout = true
+            }
+            filmstripHideWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+        } else {
+            filmstripHideWorkItem?.cancel()
+        }
     }
 
     // MARK: - Keyboard

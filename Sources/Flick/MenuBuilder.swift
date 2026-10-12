@@ -86,6 +86,7 @@ enum MenuBuilder {
 
         menu.addItem(make("暂停动画", #selector(MainWindowController.toggleAnimationPlayback(_:)), "p", []))
         menu.addItem(make("信息面板", #selector(MainWindowController.toggleInfoPanel(_:)), "i"))
+        menu.addItem(make("缩略图条", #selector(MainWindowController.toggleFilmstrip(_:)), "t", []))
         menu.addItem(.separator())
 
         let backgroundItem = NSMenuItem(title: "背景", action: nil, keyEquivalent: "")

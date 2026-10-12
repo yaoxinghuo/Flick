@@ -41,13 +41,13 @@ final class InfoPanelView: NSVisualEffectView {
         layer?.masksToBounds = true
 
         let closeButton = NSButton(
-            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭")!,
+            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L10n.s("Close", "关闭"))!,
             target: self,
             action: #selector(closeTapped)
         )
         closeButton.isBordered = false
         closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.toolTip = "关闭信息面板"
+        closeButton.toolTip = L10n.s("Close Info Panel", "关闭信息面板")
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(closeButton)
 

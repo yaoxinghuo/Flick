@@ -116,7 +116,7 @@ public enum ImageMetadataReader {
         guard let date = try? url.resourceValues(forKeys: [.creationDateKey]).creationDate else {
             return nil
         }
-        return "创建于 " + compactDateFormatter.string(from: date)
+        return L10n.s("Created ", "创建于 ") + compactDateFormatter.string(from: date)
     }
 
     // MARK: - File section
@@ -126,21 +126,21 @@ public enum ImageMetadataReader {
             .fileSizeKey, .creationDateKey, .contentModificationDateKey,
         ])
         var fields: [ImageMetadata.Field] = [
-            .init("文件名", url.lastPathComponent),
-            .init("完整路径", url.path),
+            .init(L10n.s("Name", "文件名"), url.lastPathComponent),
+            .init(L10n.s("Path", "完整路径"), url.path),
         ]
         if let size = values?.fileSize {
-            fields.append(.init("大小", ByteCountFormatter.string(
+            fields.append(.init(L10n.s("Size", "大小"), ByteCountFormatter.string(
                 fromByteCount: Int64(size), countStyle: .file
             )))
         }
         if let created = values?.creationDate {
-            fields.append(.init("创建时间", dateFormatter.string(from: created)))
+            fields.append(.init(L10n.s("Created", "创建时间"), dateFormatter.string(from: created)))
         }
         if let modified = values?.contentModificationDate {
-            fields.append(.init("修改时间", dateFormatter.string(from: modified)))
+            fields.append(.init(L10n.s("Modified", "修改时间"), dateFormatter.string(from: modified)))
         }
-        return .init("文件", fields)
+        return .init(L10n.s("File", "文件"), fields)
     }
 
     // MARK: - Image section
@@ -154,26 +154,26 @@ public enum ImageMetadataReader {
 
         if let type = CGImageSourceGetType(source) as? String {
             let name = UTType(type)?.localizedDescription ?? type
-            fields.append(.init("格式", name))
+            fields.append(.init(L10n.s("Format", "格式"), name))
         }
         if let w = props[kCGImagePropertyPixelWidth] as? Int,
            let h = props[kCGImagePropertyPixelHeight] as? Int {
-            fields.append(.init("尺寸", "\(w) × \(h) 像素"))
+            fields.append(.init(L10n.s("Dimensions", "尺寸"), "\(w) × \(h)" + L10n.s(" px", " 像素")))
         }
         if let depth = props[kCGImagePropertyDepth] as? Int {
-            fields.append(.init("位深", "\(depth) 位"))
+            fields.append(.init(L10n.s("Bit Depth", "位深"), "\(depth)" + L10n.s("-bit", " 位")))
         }
         if let model = props[kCGImagePropertyColorModel] as? String {
-            fields.append(.init("色彩空间", model))
+            fields.append(.init(L10n.s("Color Space", "色彩空间"), model))
         }
         if let profile = props[kCGImagePropertyProfileName] as? String {
-            fields.append(.init("ICC 配置", profile))
+            fields.append(.init(L10n.s("ICC Profile", "ICC 配置"), profile))
         }
         if let dpiX = props[kCGImagePropertyDPIWidth] as? Double,
            let dpiY = props[kCGImagePropertyDPIHeight] as? Double {
             fields.append(.init("DPI", "\(Int(dpiX)) × \(Int(dpiY))"))
         }
-        return fields.isEmpty ? nil : .init("图像", fields)
+        return fields.isEmpty ? nil : .init(L10n.s("Image", "图像"), fields)
     }
 
     // MARK: - EXIF section
@@ -195,33 +195,33 @@ public enum ImageMetadataReader {
         let model = tiff?[kCGImagePropertyTIFFModel] as? String
         if let camera = [make, model].compactMap({ $0 }).joined(separator: " ")
             .nonEmpty {
-            fields.append(.init("相机", camera))
+            fields.append(.init(L10n.s("Camera", "相机"), camera))
         }
         if let lens = exif?[kCGImagePropertyExifLensModel] as? String {
-            fields.append(.init("镜头", lens))
+            fields.append(.init(L10n.s("Lens", "镜头"), lens))
         }
         if let focal = exif?[kCGImagePropertyExifFocalLength] as? Double {
-            fields.append(.init("焦距", "\(focal.trimmed) mm"))
+            fields.append(.init(L10n.s("Focal Length", "焦距"), "\(focal.trimmed) mm"))
         }
         if let fnumber = exif?[kCGImagePropertyExifFNumber] as? Double {
-            fields.append(.init("光圈", "f/\(fnumber.trimmed)"))
+            fields.append(.init(L10n.s("Aperture", "光圈"), "f/\(fnumber.trimmed)"))
         }
         if let exposure = exif?[kCGImagePropertyExifExposureTime] as? Double, exposure > 0 {
-            fields.append(.init("快门", exposure < 1
-                ? "1/\(Int((1 / exposure).rounded())) 秒"
-                : "\(exposure.trimmed) 秒"))
+            fields.append(.init(L10n.s("Shutter", "快门"), exposure < 1
+                ? "1/\(Int((1 / exposure).rounded()))" + L10n.s(" s", " 秒")
+                : "\(exposure.trimmed)" + L10n.s(" s", " 秒")))
         }
         if let iso = isoValue(from: exif) {
             fields.append(.init("ISO", "\(iso)"))
         }
         if let dateTime = (exif?[kCGImagePropertyExifDateTimeOriginal]
             ?? tiff?[kCGImagePropertyTIFFDateTime]) as? String {
-            fields.append(.init("拍摄时间", formattedEXIFDate(dateTime)))
+            fields.append(.init(L10n.s("Date Taken", "拍摄时间"), formattedEXIFDate(dateTime)))
         }
         if let gpsString = formattedGPS(gps) {
             fields.append(.init("GPS", gpsString))
         }
-        return fields.isEmpty ? nil : .init("拍摄信息", fields)
+        return fields.isEmpty ? nil : .init(L10n.s("Camera Info", "拍摄信息"), fields)
     }
 
     private static func isoValue(from exif: [CFString: Any]?) -> Int? {

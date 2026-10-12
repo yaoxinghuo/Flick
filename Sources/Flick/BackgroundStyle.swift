@@ -1,4 +1,5 @@
 import AppKit
+import FlickCore
 
 /// Canvas background behind the image.
 enum BackgroundStyle: String, CaseIterable {
@@ -8,9 +9,9 @@ enum BackgroundStyle: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .darkGray: return "深灰"
-        case .black: return "纯黑"
-        case .system: return "跟随系统"
+        case .darkGray: return L10n.s("Dark Gray", "深灰")
+        case .black: return L10n.s("Black", "纯黑")
+        case .system: return L10n.s("System", "跟随系统")
         }
     }
 

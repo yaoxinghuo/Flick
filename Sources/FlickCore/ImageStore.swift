@@ -8,8 +8,10 @@ public enum ImageLoadError: Error, Equatable {
 
     public var message: String {
         switch self {
-        case .cannotOpen(let path): return "无法打开文件：\(path)"
-        case .cannotDecode(let path): return "无法解码图片：\(path)"
+        case .cannotOpen(let path):
+            return L10n.s("Cannot open file: \(path)", "无法打开文件：\(path)")
+        case .cannotDecode(let path):
+            return L10n.s("Cannot decode image: \(path)", "无法解码图片：\(path)")
         }
     }
 }

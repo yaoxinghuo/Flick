@@ -60,35 +60,35 @@ struct ImageMetadataTests {
         let url = try makeJPEGWithMetadata()
         defer { try? FileManager.default.removeItem(at: url) }
         let metadata = ImageMetadataReader.read(url: url)
-        let fileSection = metadata.sections.first { $0.title == "文件" }
+        let fileSection = metadata.sections.first { $0.title == L10n.s("File", "文件") }
         let fields = fileSection?.fields.map { $0.label } ?? []
-        #expect(fields.contains("文件名"))
-        #expect(fields.contains("完整路径"))
-        #expect(fields.contains("大小"))
-        #expect(fields.contains("创建时间"))
-        #expect(fields.contains("修改时间"))
+        #expect(fields.contains(L10n.s("Name", "文件名")))
+        #expect(fields.contains(L10n.s("Path", "完整路径")))
+        #expect(fields.contains(L10n.s("Size", "大小")))
+        #expect(fields.contains(L10n.s("Created", "创建时间")))
+        #expect(fields.contains(L10n.s("Modified", "修改时间")))
     }
 
     @Test func imageSectionReadsDimensionsAndDPI() throws {
         let url = try makeJPEGWithMetadata()
         defer { try? FileManager.default.removeItem(at: url) }
         let fields = allFields(ImageMetadataReader.read(url: url))
-        #expect(fields.contains { $0.label == "尺寸" && $0.value.contains("64 × 48") })
+        #expect(fields.contains { $0.label == L10n.s("Dimensions", "尺寸") && $0.value.contains("64 × 48") })
         #expect(fields.contains { $0.label == "DPI" && $0.value.contains("300") })
-        #expect(fields.contains { $0.label == "格式" })
+        #expect(fields.contains { $0.label == L10n.s("Format", "格式") })
     }
 
     @Test func exifSectionReadsCameraAndExposure() throws {
         let url = try makeJPEGWithMetadata()
         defer { try? FileManager.default.removeItem(at: url) }
         let fields = allFields(ImageMetadataReader.read(url: url))
-        #expect(fields.contains { $0.label == "相机" && $0.value == "Canon EOS R5" })
-        #expect(fields.contains { $0.label == "镜头" && $0.value.contains("35mm") })
-        #expect(fields.contains { $0.label == "焦距" && $0.value == "35 mm" })
-        #expect(fields.contains { $0.label == "光圈" && $0.value == "f/2.8" })
-        #expect(fields.contains { $0.label == "快门" && $0.value == "1/250 秒" })
+        #expect(fields.contains { $0.label == L10n.s("Camera", "相机") && $0.value == "Canon EOS R5" })
+        #expect(fields.contains { $0.label == L10n.s("Lens", "镜头") && $0.value.contains("35mm") })
+        #expect(fields.contains { $0.label == L10n.s("Focal Length", "焦距") && $0.value == "35 mm" })
+        #expect(fields.contains { $0.label == L10n.s("Aperture", "光圈") && $0.value == "f/2.8" })
+        #expect(fields.contains { $0.label == L10n.s("Shutter", "快门") && $0.value.hasPrefix("1/250") })
         #expect(fields.contains { $0.label == "ISO" && $0.value == "200" })
-        #expect(fields.contains { $0.label == "拍摄时间" })
+        #expect(fields.contains { $0.label == L10n.s("Date Taken", "拍摄时间") })
         #expect(fields.contains { $0.label == "GPS" && $0.value.contains("31.2304° N") })
     }
 
@@ -111,6 +111,6 @@ struct ImageMetadataTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let metadata = ImageMetadataReader.read(url: url)
-        #expect(metadata.sections.allSatisfy { $0.title != "拍摄信息" })
+        #expect(metadata.sections.allSatisfy { $0.title != L10n.s("Camera Info", "拍摄信息") })
     }
 }

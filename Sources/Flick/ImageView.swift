@@ -111,38 +111,38 @@ final class ImageView: NSView {
 
         topToolbar = ToolbarCapsule(items: [
             .init(tag: ChromeTag.rotateLeft, symbols: ["rotate.left"],
-                  fallbackTitle: "左转", toolTip: "逆时针旋转", action: #selector(chromeRotateLeft)),
+                  fallbackTitle: L10n.s("L", "左转"), toolTip: L10n.s("Rotate Left", "逆时针旋转"), action: #selector(chromeRotateLeft)),
             .init(tag: ChromeTag.rotateRight, symbols: ["rotate.right"],
-                  fallbackTitle: "右转", toolTip: "顺时针旋转", action: #selector(chromeRotateRight)),
+                  fallbackTitle: L10n.s("R", "右转"), toolTip: L10n.s("Rotate Right", "顺时针旋转"), action: #selector(chromeRotateRight)),
             .init(tag: ChromeTag.fit, symbols: ["aspectratio"],
-                  fallbackTitle: "适应", toolTip: "适应窗口", action: #selector(chromeFit)),
+                  fallbackTitle: L10n.s("Fit", "适应"), toolTip: L10n.s("Zoom to Fit", "适应窗口"), action: #selector(chromeFit)),
             .init(tag: ChromeTag.actual, symbols: ["1.magnifyingglass"],
-                  fallbackTitle: "1x", toolTip: "实际大小", action: #selector(chromeActual)),
+                  fallbackTitle: "1x", toolTip: L10n.s("Actual Size", "实际大小"), action: #selector(chromeActual)),
             .init(tag: ChromeTag.playback, symbols: ["pause.fill"],
-                  fallbackTitle: "停", toolTip: "暂停动画", action: #selector(chromePlayback),
+                  fallbackTitle: L10n.s("⏸", "停"), toolTip: L10n.s("Pause Animation", "暂停动画"), action: #selector(chromePlayback),
                   separated: true),
         ], target: self)
         topToolbar.setHidden(true, forTag: ChromeTag.playback)
 
         bottomBar = ToolbarCapsule(items: [
             .init(tag: ChromeTag.zoomOut, symbols: ["minus.magnifyingglass"],
-                  fallbackTitle: "−", toolTip: "缩小", action: #selector(chromeZoomOut)),
+                  fallbackTitle: "−", toolTip: L10n.s("Zoom Out", "缩小"), action: #selector(chromeZoomOut)),
             .init(tag: ChromeTag.zoomIn, symbols: ["plus.magnifyingglass"],
-                  fallbackTitle: "+", toolTip: "放大", action: #selector(chromeZoomIn)),
+                  fallbackTitle: "+", toolTip: L10n.s("Zoom In", "放大"), action: #selector(chromeZoomIn)),
             .init(tag: ChromeTag.prev, symbols: ["chevron.left"],
-                  fallbackTitle: "←", toolTip: "上一张", action: #selector(chromePrev),
+                  fallbackTitle: "←", toolTip: L10n.s("Previous", "上一张"), action: #selector(chromePrev),
                   separated: true),
             .init(tag: ChromeTag.next, symbols: ["chevron.right"],
-                  fallbackTitle: "→", toolTip: "下一张", action: #selector(chromeNext)),
+                  fallbackTitle: "→", toolTip: L10n.s("Next", "下一张"), action: #selector(chromeNext)),
             .init(tag: ChromeTag.open, symbols: ["folder"],
-                  fallbackTitle: "打开", toolTip: "打开…", action: #selector(chromeOpen),
+                  fallbackTitle: L10n.s("Open", "打开"), toolTip: L10n.s("Open…", "打开…"), action: #selector(chromeOpen),
                   separated: true),
             .init(tag: ChromeTag.filmstrip, symbols: ["film"],
-                  fallbackTitle: "缩略图", toolTip: "缩略图条", action: #selector(chromeFilmstrip)),
+                  fallbackTitle: L10n.s("Film", "缩略图"), toolTip: L10n.s("Filmstrip", "缩略图条"), action: #selector(chromeFilmstrip)),
             .init(tag: ChromeTag.info, symbols: ["info"],
-                  fallbackTitle: "i", toolTip: "信息面板", action: #selector(chromeInfo)),
+                  fallbackTitle: "i", toolTip: L10n.s("Info Panel", "信息面板"), action: #selector(chromeInfo)),
             .init(tag: ChromeTag.fullScreen, symbols: ["arrow.up.left.and.arrow.down.right"],
-                  fallbackTitle: "全屏", toolTip: "全屏", action: #selector(chromeFullScreen),
+                  fallbackTitle: L10n.s("Full", "全屏"), toolTip: L10n.s("Full Screen", "全屏"), action: #selector(chromeFullScreen),
                   separated: true),
         ], target: self)
 
@@ -513,7 +513,7 @@ final class ImageView: NSView {
         let paused = scrollView.isAnimationPaused
         topToolbar.setSymbols(
             paused ? ["play.fill"] : ["pause.fill"],
-            fallbackTitle: paused ? "播" : "停",
+            fallbackTitle: paused ? L10n.s("▶", "播") : L10n.s("⏸", "停"),
             forTag: ChromeTag.playback
         )
         topToolbar.setHidden(false, forTag: ChromeTag.playback)

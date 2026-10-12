@@ -81,7 +81,7 @@ final class MainWindowController: NSWindowController {
         imageView.onToggleFilmstrip = { [weak self] in self?.toggleFilmstrip(nil) }
         imageView.onTogglePlayback = { [weak self] in self?.toggleAnimationPlayback(nil) }
         window.makeFirstResponder(imageView)
-        imageView.setMessage("打开图片或文件夹开始浏览（⌘O），双击空白处或拖入图片")
+        imageView.setMessage(L10n.s("Open an image or folder to start (⌘O) — double-click or drop files here", "打开图片或文件夹开始浏览（⌘O），双击空白处或拖入图片"))
     }
 
     @available(*, unavailable)
@@ -113,13 +113,13 @@ final class MainWindowController: NSWindowController {
         } else if !regularFiles.isEmpty {
             openFileList(regularFiles)
         } else {
-            showPlaceholder("无法打开：文件不存在")
+            showPlaceholder(L10n.s("Cannot open: file does not exist", "无法打开：文件不存在"))
         }
     }
 
     private func openFolder(_ folder: URL, selecting file: URL?) {
         guard let scanned = ImageFileScanner.scan(folder: folder), !scanned.isEmpty else {
-            showPlaceholder("文件夹中没有可识别的图片：\(folder.lastPathComponent)")
+            showPlaceholder(L10n.s("No supported images in folder: \(folder.lastPathComponent)", "文件夹中没有可识别的图片：\(folder.lastPathComponent)"))
             return
         }
         files = ImageFileScanner.sorted(scanned, by: sortOrder)
@@ -137,7 +137,7 @@ final class MainWindowController: NSWindowController {
     private func openFileList(_ urls: [URL]) {
         let images = urls.filter { ImageFileScanner.isImageFile($0) }.map { ImageFile(url: $0) }
         guard !images.isEmpty else {
-            showPlaceholder("所选文件中没有可识别的图片")
+            showPlaceholder(L10n.s("No supported images in the selected files", "所选文件中没有可识别的图片"))
             return
         }
         files = ImageFileScanner.sorted(images, by: sortOrder)
@@ -186,7 +186,7 @@ final class MainWindowController: NSWindowController {
         guard let file = currentFile else {
             baseImage = nil
             isAnimatedContent = false
-            imageView.setMessage("没有图片")
+            imageView.setMessage(L10n.s("No image", "没有图片"))
             imageView.updateInfoPanel(metadata: nil)
             imageView.setTitleInfo(folder: "", file: "")
             imageView.setStatusIndex(-1, total: 0)
@@ -505,8 +505,16 @@ final class MainWindowController: NSWindowController {
 
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
-        alert.messageText = "\(Flick.appName) 使用帮助"
-        alert.informativeText = """
+        alert.messageText = L10n.s("\(Flick.appName) Help", "\(Flick.appName) 使用帮助")
+        alert.informativeText = L10n.s("""
+        Open: ⌘O to pick an image or folder, or drag onto the window / Dock icon
+        Navigate: ← / →, Space (next), ⇧Space (previous), Home / End, or a two-finger horizontal swipe
+        Zoom: ⌘+ / ⌘-, ⌘0 fit, ⌘1 actual size, ⌘2 fill, pinch, double-click
+        Rotate: ⌘R clockwise, ⇧⌘R counter-clockwise; Full screen: F or ⌃⌘F
+        Animation: P pause / resume; Info panel: ⌘I; Filmstrip: T
+        Sorting: View menu > Sort By
+        Opening a single image browses every image in its folder.
+        """, """
         打开：⌘O 选择图片或文件夹，或直接拖拽到窗口 / Dock 图标
         翻页：← / →、空格（下一张）、⇧空格（上一张）、Home / End，或双指水平滑动
         缩放：⌘+ / ⌘-、⌘0 适应、⌘1 实际大小、⌘2 填满、捏合、双击
@@ -514,7 +522,7 @@ final class MainWindowController: NSWindowController {
         动图：P 暂停 / 继续；信息面板：⌘I；缩略图条：T
         排序：显示菜单 > 排序方式
         打开单张图片时自动浏览其所在文件夹的所有图片。
-        """
+        """)
         alert.runModal()
     }
 
@@ -540,7 +548,8 @@ final class MainWindowController: NSWindowController {
              #selector(rotateRight(_:)), #selector(rotateLeft(_:)):
             return baseImage != nil || isAnimatedContent
         case #selector(toggleAnimationPlayback(_:)):
-            menuItem.title = imageView.scrollView.isAnimationPaused ? "播放动画" : "暂停动画"
+            menuItem.title = imageView.scrollView.isAnimationPaused
+            ? L10n.s("Play Animation", "播放动画") : L10n.s("Pause Animation", "暂停动画")
             return isAnimatedContent
         case #selector(toggleInfoPanel(_:)):
             menuItem.state = infoPanelVisible ? .on : .off
@@ -559,7 +568,8 @@ final class MainWindowController: NSWindowController {
             return true
         case #selector(toggleFullScreen(_:)):
             let fullScreen = window?.styleMask.contains(.fullScreen) == true
-            menuItem.title = fullScreen ? "退出全屏" : "进入全屏"
+            menuItem.title = fullScreen
+            ? L10n.s("Exit Full Screen", "退出全屏") : L10n.s("Enter Full Screen", "进入全屏")
             return true
         default:
             return true

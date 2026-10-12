@@ -1,0 +1,89 @@
+# Flick
+
+[English](README.md) | 中文
+
+一个极简的 macOS 只读看图软件——Pixea 风格的轻量替代品，只看不改：不做编辑、标注、滤镜、删除。
+
+<!-- TODO: 截图
+
+<img width="700" alt="Flick" src="..." />
+-->
+
+- 沉浸式浏览：窗口贴合图片尺寸，所有 chrome（顶部工具胶囊、底部控制栏、状态条、缩略图条）只在鼠标移到边缘时浮现
+- 动图播放：GIF / APNG / 动画 WebP 在 GPU 图层上播放（P 暂停），旋转时不重解码
+- 信息面板（⌘I）：文件 + 图像 + EXIF/TIFF/GPS 信息，缺失字段自动隐藏
+- 超大图：>4096px 先降采样解码，放大超过档位后按需加载全分辨率原位替换
+- 触控板：双指水平滑动翻页（到边界橡皮筋回弹），捏合以光标为锚点缩放
+- 窗口跟随图片大小和宽高比（钳制在屏幕范围内），切换时保持中心
+- 中英文界面（跟随系统语言）
+- 零第三方依赖；纯 SwiftPM——无 Xcode 工程、无 storyboard、无 asset catalog
+- universal binary（Apple Silicon + Intel）；最低 macOS 15
+
+## 下载与首次运行
+
+1. 从最新的 **Release** 下载 `Flick.zip`（推 `v*` tag 时 CI 自动构建发布）；
+   开发版本可在最近一次成功的 **Actions** 运行里下载 artifact。
+2. 解压得到 `Flick.app`，拖到 `应用程序` 或任意位置。
+3. **应用为 ad-hoc 签名（无 Apple 开发者证书），首次运行会被 Gatekeeper 拦截。** 任选其一：
+   - 右键 `Flick.app` → **打开** → 对话框中点"打开"；或
+   - 终端移除隔离属性（之后双击即可）：
+     ```bash
+     xattr -dr com.apple.quarantine /path/to/Flick.app
+     ```
+
+## 使用
+
+打开图片的方式：
+
+- 终端 `Flick /path/to/image_or_folder`
+- ⌘O 打开面板（可多选文件，或选文件夹）
+- 拖拽文件 / 文件夹到窗口或 Dock 图标
+- Finder "打开方式" / 双击（已为常见图片类型声明 Viewer 角色）
+
+规则：打开单张图片 → 自动浏览其所在文件夹全部图片并定位到该张；打开文件夹 → 显示第一张；一次拖入多个文件 → 以这些文件组成临时列表。不递归子文件夹，忽略隐藏文件。空窗口上双击画布也可唤出打开面板。
+
+| 按键 | 功能 |
+|---|---|
+| ← / →、空格 / ⇧空格 | 上一张 / 下一张 |
+| Home / End | 第一张 / 最后一张 |
+| 双指水平滑动 | 翻页（带动画；首/末张橡皮筋回弹） |
+| 捏合、拖拽、双击 | 以光标为锚点缩放、放大后平移、适应 ↔ 100% |
+| ⌘= / ⌘- | 放大 / 缩小 |
+| ⌘0 / ⌘1 / ⌘2 | 适应窗口 / 实际大小 / 填满窗口 |
+| ⌘R / ⇧⌘R | 顺时针 / 逆时针旋转 90°（仅查看） |
+| P | 暂停 / 继续动图 |
+| ⌘I | 信息面板 |
+| T | 缩略图条（开启后鼠标滑到底缘唤出） |
+| F 或 ⌃⌘F、Esc | 进入 / 退出全屏 |
+| ⌥⌘R、⌘C / ⌥⌘C | 在 Finder 中显示、拷贝图片 / 拷贝文件路径 |
+
+排序：显示菜单 → 排序方式（名称 / 修改日期 / 创建日期 / 大小，升序 / 降序）。
+背景：显示菜单 → 背景（深灰 / 纯黑 / 跟随系统）。"循环浏览"和"切换图片时保持旋转角度"
+在显示菜单中可选。
+
+## 开发 / 构建（不需要 Xcode）
+
+```bash
+swift build                # debug 构建
+./Scripts/test.sh          # 单元测试（为无 Xcode 的命令行环境包装 swift test）
+./Scripts/build_app.sh     # 产出 Flick.app + Flick.zip（universal，ad-hoc 签名）
+```
+
+`Scripts/test.sh` 存在的原因：只有 Command Line Tools 的机器默认找不到
+`Testing.framework`，脚本会补上 `-F` / rpath 等参数。
+
+CI：推送 main 和 PR 跑构建 + 测试；推 `v*` tag 额外打包 `Flick.zip`、上传
+artifact 并创建 GitHub Release。
+
+## 实现要点
+
+- **分层**：`FlickCore`（纯逻辑——文件夹扫描排序、翻页状态机、解码/降采样、缩略图缓存、滑动手势判定、元数据读取）用 swift-testing 单测；`Flick` 为 AppKit 壳。
+- **解码**：`CGImageSource` 分档——显示档 ≤4096px，缩放超过档位时按需拉全分辨率；`realSize` 始终是真实像素，所以 100% 就是真实大小。
+- **动图**：帧一次解码进 `CAKeyframeAnimation` 跑在图层上——旋转/缩放不再触发解码。
+- **缩略图条**：横向 `NSCollectionView` 手动平移（不套 `NSScrollView`，因此没有滚动条）；高亮环由数据驱动，cell 复用不会残留旧环。
+- **本地化**：字符串通过 `L10n.s(en, zh)` 写在代码里——没有 Xcode 资源打包流程，不用 `.lproj`。
+
+## 已知限制
+
+- 同时拖入文件夹和文件时优先处理文件夹。
+- 个别罕见 RAW 扩展名依赖系统 ImageIO 的 UTI 识别，可能被跳过。

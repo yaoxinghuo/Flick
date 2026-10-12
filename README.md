@@ -1,102 +1,89 @@
 # Flick
 
-一个极简的 macOS 只读看图软件（Pixea 风格的轻量替代品）。只看不改：不做编辑、标注、滤镜、删除。
+English | [中文](README-zh.md)
 
-- 纯 Swift Package（SwiftPM），无 Xcode 工程、无 storyboard/xib、零第三方依赖
-- 界面：AppKit 纯代码；逻辑层 `FlickCore` 与 UI 解耦、可单元测试
-- 最低系统：macOS 15；universal binary（Apple Silicon + Intel）
-- 应用名集中定义在 `Sources/FlickCore/FlickConstants.swift`
+A minimal, read-only image viewer for macOS — a lightweight Pixea-style alternative for people who just want to *look* at pictures. No editing, no annotations, no filters, no deleting.
 
-## 构建
+<!-- TODO: screenshot
 
-需要 macOS 命令行工具链（Swift 6.2+），**不需要 Xcode**：
+<img width="700" alt="Flick" src="..." />
+-->
+
+- Immersive browsing: the window hugs the image, chrome (toolbar capsule, bottom controls, status strip, filmstrip) only appears while the pointer is over the edges
+- Animated images: GIF / APNG / animated WebP play on a GPU layer (P to pause), rotate while playing
+- Info panel (⌘I): file + image + EXIF/TIFF/GPS fields, missing data simply hidden
+- Large images: >4096 px sources decode downsampled first, full resolution swapped in when you zoom past the tier
+- Trackpad: two-finger swipe to flip pages (rubber-bands at the bounds), pinch to zoom anchored at the cursor
+- Window follows the image's size and aspect ratio (clamped to the screen), centers on change
+- English and Chinese UI (follows system language)
+- Zero third-party dependencies; pure SwiftPM — no Xcode project, no storyboards, no asset catalogs
+- Universal binary (Apple Silicon + Intel); macOS 15+
+
+## Download & First Launch
+
+1. Download `Flick.zip` from the latest **Release** (CI builds and publishes it when a `v*` tag is pushed);
+   for development builds, grab the artifact from the latest successful **Actions** run.
+2. Unzip to get `Flick.app`, drag it to `Applications` or anywhere you like.
+3. **The app is ad-hoc signed (no Apple Developer certificate), so Gatekeeper will block the first launch.** Either:
+   - Right-click `Flick.app` → **Open** → click "Open" in the dialog; or
+   - Remove the quarantine attribute in Terminal (then double-click works):
+     ```bash
+     xattr -dr com.apple.quarantine /path/to/Flick.app
+     ```
+
+## Usage
+
+Open images by:
+
+- `Flick /path/to/image_or_folder` from a terminal
+- ⌘O open panel (multi-select files, or pick a folder)
+- Drag files / a folder onto the window or the Dock icon
+- Finder "Open With" / double-click (declared Viewer role for common image UTIs)
+
+Opening a single image browses every image in its folder and lands on that file; opening a folder shows the first image; dropping several files browses just those. Subfolders are not recursed, hidden files are skipped. On an empty window, double-clicking the canvas also opens the picker.
+
+| Key | Action |
+|---|---|
+| ← / →, Space / ⇧Space | Previous / next image |
+| Home / End | First / last image |
+| Two-finger horizontal swipe | Flip pages (animated; rubber-band at ends) |
+| Pinch, drag, double-click | Zoom at cursor, pan when zoomed, fit ↔ 100% |
+| ⌘= / ⌘- | Zoom in / out |
+| ⌘0 / ⌘1 / ⌘2 | Fit window / actual size / fill window |
+| ⌘R / ⇧⌘R | Rotate 90° right / left (view only) |
+| P | Pause / resume animation |
+| ⌘I | Info panel |
+| T | Filmstrip (hover the bottom edge to reveal when enabled) |
+| F or ⌃⌘F, Esc | Enter / exit full screen |
+| ⌥⌘R, ⌘C / ⌥⌘C | Reveal in Finder, copy image / copy file path |
+
+Sorting (View → Sort By): name / date modified / date created / size, ascending or descending.
+Background (View → Background): dark gray / black / system. Wrap-around browsing and
+"keep rotation across images" are optional toggles in the View menu.
+
+## Development / Building (no Xcode required)
 
 ```bash
-swift build                # debug
-swift build -c release     # release
-swift run Flick            # 运行
-swift run Flick /path/to/图片或文件夹   # 带参数打开
+swift build                # debug build
+./Scripts/test.sh          # unit tests (wraps `swift test` for CLT-only machines)
+./Scripts/build_app.sh     # produces Flick.app + Flick.zip (universal, ad-hoc signed)
 ```
 
-## 测试
+`Scripts/test.sh` exists because Command Line Tools without Xcode can't find
+`Testing.framework` by default — the script adds the needed `-F` / rpath flags.
 
-```bash
-# 本机只有命令行工具链（无 Xcode）时：
-./Scripts/test.sh
+CI: pushes to main and PRs run build + test; pushing a `v*` tag additionally packages
+`Flick.zip`, uploads the artifact, and creates a GitHub Release.
 
-# 安装了 Xcode 的机器 / CI 上也可以直接：
-swift test
-```
+## Implementation Notes
 
-> 说明：测试用的是系统自带的 swift-testing 框架。无 Xcode 的 Command Line Tools
-> 中 `Testing.framework` 不在默认搜索路径，且其 Foundation crossimport 会引用一个
-> 没有 swiftmodule 的私有框架，导致裸 `swift test` 失败。`Scripts/test.sh` 会自动
-> 检测环境并补上 `-F` / `-disable-cross-import-overlays` / `-rpath` 参数。
+- **Layers**: `FlickCore` (pure logic — folder scanning & sorting, navigation state, decode/downsampling, thumbnail store, swipe state machine, metadata reader) is unit-tested with swift-testing; `Flick` is the AppKit shell.
+- **Decode**: `CGImageSource` tiered decoding — display tier ≤4096 px, full-resolution fetch on demand when zoom exceeds the tier; `realSize` always reflects the source so 100% means true pixels.
+- **Animation**: frames decode once into a `CAKeyframeAnimation` on the image layer — rotation/zoom never re-decodes.
+- **Filmstrip**: horizontal `NSCollectionView` panned manually (no `NSScrollView`, hence no scrollbars); the highlight ring is data-driven so cell reuse can't leave stale rings.
+- **Localization**: strings live in code via `L10n.s(en, zh)` — no `.lproj` bundles since there's no Xcode resource step.
 
-## 打包成 .app
+## Known Limitations
 
-```bash
-./Scripts/build_app.sh [版本号]   # 版本号缺省取最新 git tag，无 tag 用 0.1.0
-```
-
-产出 `Flick.app` 与 `Flick.zip`。应用为 ad-hoc 签名。
-图标由 `Resources/icon_1024.png` 经 `sips` + `iconutil` 生成（该文件缺失时自动跳过图标）。
-
-**首次运行从 GitHub Actions / zip 下载的包**，会被 Gatekeeper 隔离，执行一次：
-
-```bash
-xattr -dr com.apple.quarantine Flick.app
-```
-
-或在 Finder 中右键 → 打开。
-
-## 打开方式
-
-- `Flick /path/to/image_or_folder` 命令行参数
-- ⌘O 打开面板（可多选文件，或选文件夹）
-- 拖拽文件 / 文件夹到窗口或 Dock 图标
-- Finder "打开方式" / 双击（Info.plist 已声明支持的图片类型，Role = Viewer）
-
-规则：打开单张图片 → 自动浏览其所在文件夹全部图片并定位到该张；打开文件夹 → 显示第一张；一次拖入多个文件 → 以这些文件组成临时列表。不递归子文件夹，忽略隐藏文件。
-
-## 快捷键
-
-| 按键 | 功能 |
-|------|------|
-| ← / → | 上一张 / 下一张 |
-| 空格 / ⇧空格 | 下一张 / 上一张 |
-| Home / End | 第一张 / 最后一张 |
-| ⌘O | 打开 |
-| ⌥⌘R | 在 Finder 中显示 |
-| ⌘C / ⌥⌘C | 拷贝图片 / 拷贝文件路径 |
-| 触控板捏合 | 缩放（以手指位置为锚点） |
-| 双击 / 双指双击 | 适应窗口 ↔ 100% |
-| 拖拽 / 双指滑动 | 放大后平移图片 |
-| 双指水平滑动 | 适应窗口状态下翻页（带滑动动画；首/末张橡皮筋回弹） |
-| ⌘= / ⌘- | 放大 / 缩小 |
-| ⌘0 / ⌘1 / ⌘2 | 适应窗口 / 实际大小 / 填满窗口 |
-| ⌘R / ⇧⌘R | 顺时针 / 逆时针旋转 90°（仅查看） |
-| F 或 ⌃⌘F | 进入 / 退出全屏 |
-| Esc | 退出全屏 |
-
-排序：显示菜单 → 排序方式（名称 / 修改日期 / 创建日期 / 大小，升序 / 降序）。
-背景：显示菜单 → 背景（深灰 / 纯黑 / 跟随系统）。右下角显示当前缩放比例。
-显示菜单还有"循环浏览"（默认关，首/末张不翻页）和"切换图片时保持旋转角度"。
-
-## 项目结构
-
-```
-Package.swift
-Sources/FlickCore/      纯逻辑库：文件夹扫描排序、图片类型判断、翻页状态机、图片解码缓存
-Sources/Flick/          AppKit 界面与入口（main.swift 手写启动）
-Tests/FlickCoreTests/   swift-testing 单元测试
-Resources/icon_1024.png 应用图标源图
-Scripts/build_app.sh    手工组装 universal Flick.app + 图标 + zip
-Scripts/test.sh         无 Xcode 环境下的 swift test 包装
-.github/workflows/      CI：build → test → 打包 → 上传 artifact / Release
-```
-
-## 已知限制
-
-- 打开方式规则中，拖拽同时包含文件夹和文件时优先处理文件夹。
-- RAW 等格式依赖系统 ImageIO 支持的 UTI 识别；个别罕见扩展名可能被跳过。
+- Dropping a folder *and* files together prefers the folder.
+- Rare RAW extensions depend on system ImageIO UTI recognition and may be skipped.

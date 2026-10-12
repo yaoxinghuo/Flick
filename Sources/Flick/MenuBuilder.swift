@@ -21,40 +21,40 @@ enum MenuBuilder {
         let item = NSMenuItem()
         let menu = NSMenu()
         item.submenu = menu
-        menu.addItem(make("关于 \(Flick.appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+        menu.addItem(make(L10n.s("About \(Flick.appName)", "关于 \(Flick.appName)"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
         menu.addItem(.separator())
-        menu.addItem(make("退出 \(Flick.appName)", #selector(NSApplication.terminate(_:)), "q"))
+        menu.addItem(make(L10n.s("Quit \(Flick.appName)", "退出 \(Flick.appName)"), #selector(NSApplication.terminate(_:)), "q"))
         return item
     }
 
     private static func fileSubmenu() -> NSMenuItem {
         let item = NSMenuItem()
-        let menu = NSMenu(title: "文件")
+        let menu = NSMenu(title: L10n.s("File", "文件"))
         item.submenu = menu
-        menu.addItem(make("打开…", #selector(MainWindowController.openDocument(_:)), "o"))
+        menu.addItem(make(L10n.s("Open…", "打开…"), #selector(MainWindowController.openDocument(_:)), "o"))
         menu.addItem(.separator())
-        menu.addItem(make("在 Finder 中显示", #selector(MainWindowController.revealInFinder(_:)), "r", [.command, .option]))
-        menu.addItem(make("拷贝图片", #selector(MainWindowController.copyImage(_:)), "c"))
-        menu.addItem(make("拷贝文件路径", #selector(MainWindowController.copyFilePath(_:)), "c", [.command, .option]))
+        menu.addItem(make(L10n.s("Reveal in Finder", "在 Finder 中显示"), #selector(MainWindowController.revealInFinder(_:)), "r", [.command, .option]))
+        menu.addItem(make(L10n.s("Copy Image", "拷贝图片"), #selector(MainWindowController.copyImage(_:)), "c"))
+        menu.addItem(make(L10n.s("Copy File Path", "拷贝文件路径"), #selector(MainWindowController.copyFilePath(_:)), "c", [.command, .option]))
         menu.addItem(.separator())
-        menu.addItem(make("关闭窗口", #selector(NSWindow.performClose(_:)), "w"))
+        menu.addItem(make(L10n.s("Close Window", "关闭窗口"), #selector(NSWindow.performClose(_:)), "w"))
         return item
     }
 
     private static func viewSubmenu() -> NSMenuItem {
         let item = NSMenuItem()
-        let menu = NSMenu(title: "显示")
+        let menu = NSMenu(title: L10n.s("View", "显示"))
         item.submenu = menu
 
         // Arrow-key equivalents use the private-use function-key scalars.
-        menu.addItem(make("上一张", #selector(MainWindowController.previousImage(_:)), "\u{F702}", []))
-        menu.addItem(make("下一张", #selector(MainWindowController.nextImage(_:)), "\u{F703}", []))
-        menu.addItem(make("第一张", #selector(MainWindowController.firstImage(_:)), "\u{F729}", []))
-        menu.addItem(make("最后一张", #selector(MainWindowController.lastImage(_:)), "\u{F72B}", []))
+        menu.addItem(make(L10n.s("Previous", "上一张"), #selector(MainWindowController.previousImage(_:)), "\u{F702}", []))
+        menu.addItem(make(L10n.s("Next", "下一张"), #selector(MainWindowController.nextImage(_:)), "\u{F703}", []))
+        menu.addItem(make(L10n.s("First", "第一张"), #selector(MainWindowController.firstImage(_:)), "\u{F729}", []))
+        menu.addItem(make(L10n.s("Last", "最后一张"), #selector(MainWindowController.lastImage(_:)), "\u{F72B}", []))
         menu.addItem(.separator())
 
-        let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
-        let sortMenu = NSMenu(title: "排序方式")
+        let sortItem = NSMenuItem(title: L10n.s("Sort By", "排序方式"), action: nil, keyEquivalent: "")
+        let sortMenu = NSMenu(title: L10n.s("Sort By", "排序方式"))
         sortItem.submenu = sortMenu
         for key in ImageSortKey.allCases {
             let i = make(key.displayName, #selector(MainWindowController.setSortKey(_:)))
@@ -62,35 +62,35 @@ enum MenuBuilder {
             sortMenu.addItem(i)
         }
         sortMenu.addItem(.separator())
-        let asc = make("升序", #selector(MainWindowController.setSortAscending(_:)))
+        let asc = make(L10n.s("Ascending", "升序"), #selector(MainWindowController.setSortAscending(_:)))
         asc.representedObject = true
-        let desc = make("降序", #selector(MainWindowController.setSortAscending(_:)))
+        let desc = make(L10n.s("Descending", "降序"), #selector(MainWindowController.setSortAscending(_:)))
         desc.representedObject = false
         sortMenu.addItem(asc)
         sortMenu.addItem(desc)
         menu.addItem(sortItem)
         menu.addItem(.separator())
 
-        menu.addItem(make("放大", #selector(MainWindowController.zoomIn(_:)), "="))
-        menu.addItem(make("缩小", #selector(MainWindowController.zoomOut(_:)), "-"))
-        menu.addItem(make("适应窗口", #selector(MainWindowController.zoomToFit(_:)), "0"))
-        menu.addItem(make("实际大小", #selector(MainWindowController.zoomToActualSize(_:)), "1"))
-        menu.addItem(make("填满窗口", #selector(MainWindowController.zoomToFill(_:)), "2"))
+        menu.addItem(make(L10n.s("Zoom In", "放大"), #selector(MainWindowController.zoomIn(_:)), "="))
+        menu.addItem(make(L10n.s("Zoom Out", "缩小"), #selector(MainWindowController.zoomOut(_:)), "-"))
+        menu.addItem(make(L10n.s("Zoom to Fit", "适应窗口"), #selector(MainWindowController.zoomToFit(_:)), "0"))
+        menu.addItem(make(L10n.s("Actual Size", "实际大小"), #selector(MainWindowController.zoomToActualSize(_:)), "1"))
+        menu.addItem(make(L10n.s("Fill Window", "填满窗口"), #selector(MainWindowController.zoomToFill(_:)), "2"))
         menu.addItem(.separator())
 
-        menu.addItem(make("顺时针旋转", #selector(MainWindowController.rotateRight(_:)), "r"))
-        menu.addItem(make("逆时针旋转", #selector(MainWindowController.rotateLeft(_:)), "r", [.command, .shift]))
-        menu.addItem(make("切换图片时保持旋转角度", #selector(MainWindowController.toggleKeepRotation(_:))))
-        menu.addItem(make("循环浏览", #selector(MainWindowController.toggleWrapAround(_:))))
+        menu.addItem(make(L10n.s("Rotate Right", "顺时针旋转"), #selector(MainWindowController.rotateRight(_:)), "r"))
+        menu.addItem(make(L10n.s("Rotate Left", "逆时针旋转"), #selector(MainWindowController.rotateLeft(_:)), "r", [.command, .shift]))
+        menu.addItem(make(L10n.s("Keep Rotation Across Images", "切换图片时保持旋转角度"), #selector(MainWindowController.toggleKeepRotation(_:))))
+        menu.addItem(make(L10n.s("Wrap Around", "循环浏览"), #selector(MainWindowController.toggleWrapAround(_:))))
         menu.addItem(.separator())
 
-        menu.addItem(make("暂停动画", #selector(MainWindowController.toggleAnimationPlayback(_:)), "p", []))
-        menu.addItem(make("信息面板", #selector(MainWindowController.toggleInfoPanel(_:)), "i"))
-        menu.addItem(make("缩略图条", #selector(MainWindowController.toggleFilmstrip(_:)), "t", []))
+        menu.addItem(make(L10n.s("Pause Animation", "暂停动画"), #selector(MainWindowController.toggleAnimationPlayback(_:)), "p", []))
+        menu.addItem(make(L10n.s("Info Panel", "信息面板"), #selector(MainWindowController.toggleInfoPanel(_:)), "i"))
+        menu.addItem(make(L10n.s("Filmstrip", "缩略图条"), #selector(MainWindowController.toggleFilmstrip(_:)), "t", []))
         menu.addItem(.separator())
 
-        let backgroundItem = NSMenuItem(title: "背景", action: nil, keyEquivalent: "")
-        let backgroundMenu = NSMenu(title: "背景")
+        let backgroundItem = NSMenuItem(title: L10n.s("Background", "背景"), action: nil, keyEquivalent: "")
+        let backgroundMenu = NSMenu(title: L10n.s("Background", "背景"))
         backgroundItem.submenu = backgroundMenu
         for style in BackgroundStyle.allCases {
             let i = make(style.displayName, #selector(MainWindowController.setBackground(_:)))
@@ -100,27 +100,27 @@ enum MenuBuilder {
         menu.addItem(backgroundItem)
         menu.addItem(.separator())
 
-        menu.addItem(make("进入全屏", #selector(MainWindowController.toggleFullScreen(_:)), "f", [.command, .control]))
+        menu.addItem(make(L10n.s("Enter Full Screen", "进入全屏"), #selector(MainWindowController.toggleFullScreen(_:)), "f", [.command, .control]))
 
         return item
     }
 
     private static func windowSubmenu() -> NSMenuItem {
         let item = NSMenuItem()
-        let menu = NSMenu(title: "窗口")
+        let menu = NSMenu(title: L10n.s("Window", "窗口"))
         item.submenu = menu
-        menu.addItem(make("最小化", #selector(NSWindow.performMiniaturize(_:)), "m"))
-        menu.addItem(make("缩放", #selector(NSWindow.performZoom(_:))))
+        menu.addItem(make(L10n.s("Minimize", "最小化"), #selector(NSWindow.performMiniaturize(_:)), "m"))
+        menu.addItem(make(L10n.s("Zoom", "缩放"), #selector(NSWindow.performZoom(_:))))
         menu.addItem(.separator())
-        menu.addItem(make("全部带到最前面", #selector(NSApplication.arrangeInFront(_:))))
+        menu.addItem(make(L10n.s("Bring All to Front", "全部带到最前面"), #selector(NSApplication.arrangeInFront(_:))))
         return item
     }
 
     private static func helpSubmenu() -> NSMenuItem {
         let item = NSMenuItem()
-        let menu = NSMenu(title: "帮助")
+        let menu = NSMenu(title: L10n.s("Help", "帮助"))
         item.submenu = menu
-        menu.addItem(make("\(Flick.appName) 使用帮助", #selector(MainWindowController.showHelp(_:)), "?"))
+        menu.addItem(make(L10n.s("\(Flick.appName) Help", "\(Flick.appName) 使用帮助"), #selector(MainWindowController.showHelp(_:)), "?"))
         return item
     }
 

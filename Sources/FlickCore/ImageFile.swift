@@ -27,10 +27,10 @@ public enum ImageSortKey: String, CaseIterable, Equatable {
 
     public var displayName: String {
         switch self {
-        case .name: return "名称"
-        case .modificationDate: return "修改日期"
-        case .creationDate: return "创建日期"
-        case .fileSize: return "大小"
+        case .name: return L10n.s("Name", "名称")
+        case .modificationDate: return L10n.s("Date Modified", "修改日期")
+        case .creationDate: return L10n.s("Date Created", "创建日期")
+        case .fileSize: return L10n.s("Size", "大小")
         }
     }
 }

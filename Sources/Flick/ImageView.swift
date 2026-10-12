@@ -129,6 +129,9 @@ final class ImageView: NSView {
             width: bounds.width - panelWidth, height: stripHeight
         )
         filmstrip.isHidden = stripHeight == 0
+        if stripHeight > 0 {
+            filmstrip.ensureLoaded()
+        }
         // Keep the HUD pinned to the scroll view's right edge, above the strip.
         zoomHUD.frame.origin = NSPoint(
             x: scrollView.frame.maxX - zoomHUD.frame.width - 12,

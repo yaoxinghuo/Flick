@@ -19,6 +19,11 @@ final class InfoPanelView: NSVisualEffectView {
         text.textContainerInset = NSSize(width: 12, height: 12)
         text.isVerticallyResizable = true
         text.isHorizontallyResizable = false
+        text.minSize = .zero
+        text.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         text.autoresizingMask = [.width]
         text.textContainer?.widthTracksTextView = true
         text.textContainer?.lineFragmentPadding = 4

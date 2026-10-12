@@ -4,26 +4,50 @@ import FlickCore
 /// One filmstrip cell: fixed square, thumbnail aspect-fit inside, selection
 /// ring when current. Reused by the collection view; cancels its pending
 /// decode on reuse.
+/// Cell container that keeps the thumbnail inset — autoresizing produced
+/// garbage origins under the collection view's internal layout passes.
+private final class ThumbnailCellView: NSView {
+    let thumbView = NSImageView()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 4
+        // NSImageView defaults to isEditable=true: it draws a gray-blue bezel
+        // with no image (looked like "every cell highlighted") and swallows
+        // clicks meant for the collection view. Must be disabled.
+        thumbView.isEditable = false
+        thumbView.imageScaling = .scaleProportionallyUpOrDown
+        thumbView.imageAlignment = .alignCenter
+        addSubview(thumbView)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        thumbView.frame = bounds.insetBy(dx: 4, dy: 4)
+    }
+}
+
 private final class ThumbnailItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("flick.thumbnail")
 
-    private let thumbView = NSImageView()
+    private var thumbView: NSImageView {
+        (view as? ThumbnailCellView)!.thumbView
+    }
     private var request: ThumbnailRequest?
     private var generation = 0
 
-    override func loadView() {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 4
-        view = container
-
-        thumbView.imageScaling = .scaleProportionallyUpOrDown
-        thumbView.imageAlignment = .alignCenter
-        thumbView.frame = view.bounds.insetBy(dx: 4, dy: 4)
-        thumbView.autoresizingMask = [.width, .height]
-        view.addSubview(thumbView)
+    /// NSCollectionView instantiates items via `init()` and never calls
+    /// `loadView` for class-registered items — build the view eagerly here.
+    override init(nibName nibNameOrNil: NSNib.Name?, bundle nibBundleOrNil: Bundle?) {
+        super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+        view = ThumbnailCellView()
         updateHighlight()
     }
+
+    required init?(coder: NSCoder) { fatalError() }
 
     override var isSelected: Bool {
         didSet { updateHighlight() }
@@ -117,6 +141,17 @@ final class FilmstripView: NSView {
         urls = newURLs
         currentIndex = -1
         collectionView.reloadData()
+    }
+
+    /// `reloadData` run while the strip was hidden/zero-sized can leave the
+    /// collection view without items. Called once it becomes visible so the
+    /// first open doesn't show an empty strip.
+    func ensureLoaded() {
+        guard !urls.isEmpty, collectionView.visibleItems().isEmpty else { return }
+        collectionView.reloadData()
+        let index = currentIndex
+        currentIndex = -1
+        setCurrentIndex(index)
     }
 
     /// Highlights `index` and scrolls it to the strip's horizontal center.

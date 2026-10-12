@@ -161,10 +161,12 @@ final class ImageView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let shift = flags.contains(.shift)
+        // Arrow/function keys carry .function/.numericPad in modifierFlags;
+        // only look at the command-style modifiers.
+        let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let shift = mods.contains(.shift)
         // Bare keys only; ⌘ shortcuts are handled by the menu.
-        guard flags.isSubset(of: [.shift]) else {
+        guard mods.isSubset(of: [.shift]) else {
             super.keyDown(with: event)
             return
         }

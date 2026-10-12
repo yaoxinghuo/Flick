@@ -28,7 +28,7 @@ final class ImageDocumentView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
-            scrollView?.toggleSmartZoom(at: convert(event.locationInWindow, from: nil))
+            scrollView?.toggleSmartZoom(atDocPoint: convert(event.locationInWindow, from: nil))
             return
         }
         guard let scrollView, scrollView.canPan else {

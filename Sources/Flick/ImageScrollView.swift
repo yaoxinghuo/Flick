@@ -89,9 +89,14 @@ final class ImageScrollView: NSScrollView {
         return mode == .fill ? max(width, height) : min(width, height)
     }
 
+    /// Whether the magnified image overflows the viewport (drag-pan allowed).
+    /// Both sides are in document coordinates: the visible rect is the clip
+    /// view's bounds (scaled by magnification), the document's bounds are the
+    /// unscaled image size.
     var canPan: Bool {
-        documentVisibleRect.size.width < document.frame.width - 0.5
-            || documentVisibleRect.size.height < document.frame.height - 0.5
+        let visible = documentVisibleRect.size
+        let doc = document.bounds.size
+        return visible.width < doc.width - 0.5 || visible.height < doc.height - 0.5
     }
 
     private func updateMagnificationRange() {
@@ -130,7 +135,7 @@ final class ImageScrollView: NSScrollView {
     }
 
     private func scrollToTopLeft() {
-        contentView.bounds.origin = .zero
+        contentView.scroll(to: .zero)
         reflectScrolledClipView(contentView)
     }
 
@@ -179,8 +184,8 @@ final class ImageScrollView: NSScrollView {
     }
 
     /// Double-click / two-finger double-tap: fit ↔ 100% at the pointer.
-    func toggleSmartZoom(at viewPoint: NSPoint) {
-        let docPoint = document.convert(viewPoint, from: contentView)
+    /// `docPoint` is in documentView coordinates.
+    func toggleSmartZoom(atDocPoint docPoint: NSPoint) {
         let atFit = abs(magnification - fitMagnification) < fitMagnification * 0.02
         zoom(to: atFit ? 1.0 : fitMagnification, anchoredAt: docPoint)
         zoomMode = atFit ? .actual : .fit
@@ -203,10 +208,10 @@ final class ImageScrollView: NSScrollView {
         )
         magnification = clamped
         let after = documentVisibleRect
-        contentView.bounds.origin = NSPoint(
+        contentView.scroll(to: NSPoint(
             x: docPoint.x - fraction.x * after.width,
             y: docPoint.y - fraction.y * after.height
-        )
+        ))
         reflectScrolledClipView(contentView)
         zoomMode = .custom
         notify()
@@ -222,17 +227,18 @@ final class ImageScrollView: NSScrollView {
     }
 
     override func smartMagnify(with event: NSEvent) {
-        toggleSmartZoom(at: contentView.convert(event.locationInWindow, from: nil))
+        toggleSmartZoom(atDocPoint: document.convert(event.locationInWindow, from: nil))
     }
 
     // MARK: - Panning (mouse drag)
 
     /// Scrolls so the document point stays under the pointer during a drag.
+    /// `scroll(to:)` runs edge constraints so the image can't be dragged out.
     func dragPan(from startDocPoint: NSPoint, startOrigin: NSPoint, to currentDocPoint: NSPoint) {
-        contentView.bounds.origin = NSPoint(
+        contentView.scroll(to: NSPoint(
             x: startOrigin.x - (currentDocPoint.x - startDocPoint.x),
             y: startOrigin.y - (currentDocPoint.y - startDocPoint.y)
-        )
+        ))
         reflectScrolledClipView(contentView)
     }
 

@@ -175,6 +175,11 @@ final class ToolbarCapsule: ChromeCapsule {
             ? .controlAccentColor
             : NSColor(white: 1, alpha: 0.9)
     }
+
+    /// Disabled buttons render dimmed — used for prev/next at the bounds.
+    func setEnabled(_ enabled: Bool, forTag tag: Int) {
+        buttons[tag]?.isEnabled = enabled
+    }
 }
 
 /// Titlebar stand-in shown on hover: folder ▸ filename, positioned next to

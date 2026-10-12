@@ -206,6 +206,10 @@ final class MainWindowController: NSWindowController {
             file: file.fileName
         )
         imageView.setStatusIndex(navigator.index, total: files.count)
+        imageView.setNavBounds(
+            canPrevious: navigator.canGoPrevious,
+            canNext: navigator.canGoNext
+        )
         prefetchNeighbors()
         loadMetadata()
         imageView.setFilmstripIndex(navigator.index)

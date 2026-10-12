@@ -103,16 +103,32 @@ final class FilmstripView: NSView {
         maxPixelSize: Int(64 * (NSScreen.main?.backingScaleFactor ?? 2))
     )
     private let collectionView = NSCollectionView()
-    private var scroll: NSScrollView!
     private var urls: [URL] = []
     private var currentIndex = -1
     private var suppressSelectCallback = false
+    /// Manual horizontal pan. NSScrollView refused to stay chrome-free (its
+    /// scroller subview persisted despite has*Scroller=false), so the strip
+    /// slides the collection view itself — no scroller can exist at all.
+    private var scrollOffset: CGFloat = 0 {
+        didSet {
+            let clamped = min(max(0, scrollOffset), maxOffset)
+            collectionView.frame = NSRect(
+                x: -clamped, y: 0,
+                width: max(contentWidth, bounds.width), height: bounds.height
+            )
+            // One nested didSet when clamped differs; the second pass sees
+            // equal values and just re-sets the frame — no recursion loop.
+            if clamped != scrollOffset { scrollOffset = clamped }
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.72).cgColor
         layer?.cornerRadius = 10
+        // The capsule layer clips: cells scrolled out of view are cut off
+        // without needing a clip view.
         layer?.masksToBounds = true
 
         let layout = NSCollectionViewFlowLayout()
@@ -128,23 +144,35 @@ final class FilmstripView: NSView {
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(ThumbnailItem.self, forItemWithIdentifier: ThumbnailItem.identifier)
-
-        let scroll = NSScrollView()
-        scroll.documentView = collectionView
-        // Scrollable but chrome-free — both scrollers off, overlay style as
-        // a belt so nothing ever draws a track on the capsule.
-        scroll.hasHorizontalScroller = false
-        scroll.hasVerticalScroller = false
-        scroll.scrollerStyle = .overlay
-        scroll.autohidesScrollers = true
-        scroll.drawsBackground = false
-        scroll.autoresizingMask = [.width, .height]
-        scroll.frame = bounds
-        addSubview(scroll)
-        self.scroll = scroll
+        addSubview(collectionView)
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        // Re-run the didSet clamp so a resized strip repositions its content.
+        scrollOffset += 0
+    }
+
+    /// Full laid-out width of all cells (sectionInset 6 + N*(56+4) - 4).
+    private var contentWidth: CGFloat {
+        let cell = Self.itemSize.width + Self.spacing
+        return max(0, CGFloat(urls.count) * cell - Self.spacing + 12)
+    }
+
+    private var maxOffset: CGFloat {
+        max(0, contentWidth - bounds.width)
+    }
+
+    /// Pans the strip. Trackpads report deltaX; wheel mice report deltaY —
+    /// either axis scrolls, whichever is stronger.
+    override func scrollWheel(with event: NSEvent) {
+        let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
+            ? event.scrollingDeltaX
+            : event.scrollingDeltaY
+        scrollOffset -= delta
+    }
 
     // MARK: - Content
 
@@ -198,14 +226,8 @@ final class FilmstripView: NSView {
     }
 
     private func centerItem(at path: IndexPath) {
-        guard let attributes = collectionView.layoutAttributesForItem(at: path),
-              let clip = scroll?.contentView else { return }
-        let centered = NSPoint(
-            x: max(0, attributes.frame.midX - clip.frame.width / 2),
-            y: 0
-        )
-        clip.scroll(to: centered)
-        scroll.reflectScrolledClipView(clip)
+        guard let attributes = collectionView.layoutAttributesForItem(at: path) else { return }
+        scrollOffset = attributes.frame.midX - bounds.width / 2
     }
 
     /// Thumbnail for the page-turn animation overlay (synchronous cache only).

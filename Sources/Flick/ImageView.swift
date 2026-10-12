@@ -376,6 +376,12 @@ final class ImageView: NSView {
         pushStatus()
     }
 
+    /// Dims the prev/next capsule buttons at the first/last image.
+    func setNavBounds(canPrevious: Bool, canNext: Bool) {
+        bottomBar.setEnabled(canPrevious, forTag: ChromeTag.prev)
+        bottomBar.setEnabled(canNext, forTag: ChromeTag.next)
+    }
+
     private var statusIndexText = ""
 
     private func pushStatus() {

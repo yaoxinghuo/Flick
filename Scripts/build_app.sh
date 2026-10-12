@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="Flick"
-BUNDLE_ID="com.example.flick"
+BUNDLE_ID="com.terrynow.flick"
 ICON_SRC="Resources/icon_1024.png"
 
 VERSION="${1:-}"

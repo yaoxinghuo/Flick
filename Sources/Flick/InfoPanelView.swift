@@ -99,12 +99,19 @@ final class InfoPanelView: NSVisualEffectView {
         let labelColor = NSColor.secondaryLabelColor
         let valueColor = NSColor.labelColor
 
+        // Field runs sit one indent level under their section title so the
+        // heading/body hierarchy reads at a glance.
+        let fieldStyle = NSMutableParagraphStyle()
+        fieldStyle.headIndent = 10
+        fieldStyle.firstLineHeadIndent = 10
+
         for (index, section) in metadata.sections.enumerated() {
             // Section titles get extra headroom via paragraph spacing rather
             // than counting newlines — blank-line height would depend on
             // whichever font the run inherited.
             let titleStyle = NSMutableParagraphStyle()
             titleStyle.paragraphSpacingBefore = index > 0 ? 18 : 0
+            titleStyle.paragraphSpacing = 4
             result.append(NSAttributedString(
                 string: section.title + "\n",
                 attributes: [
@@ -116,13 +123,24 @@ final class InfoPanelView: NSVisualEffectView {
             for field in section.fields {
                 result.append(NSAttributedString(
                     string: field.label + "\n",
-                    attributes: [.font: labelFont, .foregroundColor: labelColor]
+                    attributes: [
+                        .font: labelFont,
+                        .foregroundColor: labelColor,
+                        .paragraphStyle: fieldStyle,
+                    ]
                 ))
                 result.append(NSAttributedString(
                     string: field.value + "\n",
-                    attributes: [.font: valueFont, .foregroundColor: valueColor]
+                    attributes: [
+                        .font: valueFont,
+                        .foregroundColor: valueColor,
+                        .paragraphStyle: fieldStyle,
+                    ]
                 ))
-                result.append(NSAttributedString(string: "\n"))
+                result.append(NSAttributedString(
+                    string: "\n",
+                    attributes: [.paragraphStyle: fieldStyle]
+                ))
             }
         }
         textView.textStorage?.setAttributedString(result)

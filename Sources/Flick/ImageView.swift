@@ -220,11 +220,11 @@ final class ImageView: NSView {
             width: bottomSize.width,
             height: bottomSize.height
         )
-        let stripWidth = filmstrip.preferredWidth(maxWidth: bounds.width - 24)
+        // Full-width band flush against the window edges, above the capsule.
         filmstrip.frame = NSRect(
-            x: (bounds.width - stripWidth) / 2,
+            x: 0,
             y: bottomBar.frame.maxY + 8,
-            width: stripWidth,
+            width: bounds.width,
             height: FilmstripView.height
         )
         filmstrip.isHidden = !stripShown

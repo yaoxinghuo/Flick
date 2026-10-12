@@ -126,8 +126,7 @@ final class FilmstripView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.72).cgColor
-        layer?.cornerRadius = 10
-        // The capsule layer clips: cells scrolled out of view are cut off
+        // Full-width flush band: the layer clips cells scrolled out of view
         // without needing a clip view.
         layer?.masksToBounds = true
 
@@ -175,14 +174,6 @@ final class FilmstripView: NSView {
     }
 
     // MARK: - Content
-
-    /// Width the strip wants for `maxWidth`: enough for all cells, clamped so
-    /// narrow windows show fewer (scrollable) instead of overflowing.
-    func preferredWidth(maxWidth: CGFloat) -> CGFloat {
-        let cell = Self.itemSize.width + Self.spacing
-        let content = CGFloat(urls.count) * cell + 12 - Self.spacing
-        return max(min(content, maxWidth), min(2 * cell + 12, maxWidth))
-    }
 
     func setFiles(_ newURLs: [URL]) {
         urls = newURLs
@@ -263,7 +254,9 @@ extension FilmstripView: NSCollectionViewDataSource, NSCollectionViewDelegate {
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
         guard !suppressSelectCallback,
               let index = indexPaths.first?.item else { return }
-        currentIndex = index
+        // Don't set currentIndex here — the controller's setCurrentIndex
+        // (via onSelect) recalibrates all rings, and pre-setting it would
+        // trip the index-equality guard and skip that update.
         onSelect?(index)
     }
 }

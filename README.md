@@ -72,8 +72,8 @@ swift build                # debug build
 `Scripts/test.sh` exists because Command Line Tools without Xcode can't find
 `Testing.framework` by default — the script adds the needed `-F` / rpath flags.
 
-CI: pushes to main and PRs run build + test; pushing a `v*` tag additionally packages
-`Flick.zip`, uploads the artifact, and creates a GitHub Release.
+CI: the workflow runs on `v*` tags (or manual dispatch) — build, test, package
+`Flick.zip`, upload the artifact, and create a GitHub Release.
 
 ## Implementation Notes
 

@@ -72,8 +72,8 @@ swift build                # debug 构建
 `Scripts/test.sh` 存在的原因：只有 Command Line Tools 的机器默认找不到
 `Testing.framework`，脚本会补上 `-F` / rpath 等参数。
 
-CI：推送 main 和 PR 跑构建 + 测试；推 `v*` tag 额外打包 `Flick.zip`、上传
-artifact 并创建 GitHub Release。
+CI：工作流只在推 `v*` tag 时运行（或手动触发）——构建、测试、打包
+`Flick.zip`、上传 artifact 并创建 GitHub Release。
 
 ## 实现要点
 

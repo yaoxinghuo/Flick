@@ -100,12 +100,18 @@ final class InfoPanelView: NSVisualEffectView {
         let valueColor = NSColor.labelColor
 
         for (index, section) in metadata.sections.enumerated() {
-            if index > 0 {
-                result.append(NSAttributedString(string: "\n"))
-            }
+            // Section titles get extra headroom via paragraph spacing rather
+            // than counting newlines — blank-line height would depend on
+            // whichever font the run inherited.
+            let titleStyle = NSMutableParagraphStyle()
+            titleStyle.paragraphSpacingBefore = index > 0 ? 18 : 0
             result.append(NSAttributedString(
                 string: section.title + "\n",
-                attributes: [.font: titleFont, .foregroundColor: valueColor]
+                attributes: [
+                    .font: titleFont,
+                    .foregroundColor: valueColor,
+                    .paragraphStyle: titleStyle,
+                ]
             ))
             for field in section.fields {
                 result.append(NSAttributedString(

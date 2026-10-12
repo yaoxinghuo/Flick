@@ -9,7 +9,21 @@ final class ImageDocumentView: NSView {
         didSet { needsDisplay = true }
     }
 
-    var onDoubleClick: (() -> Void)?
+    /// Double-click with the click point in document coordinates.
+    var onDoubleClick: ((NSPoint) -> Void)?
+    /// Whether the image currently overflows the viewport (drag = pan).
+    var canPanProvider: (() -> Bool)?
+    /// Clip-view origin at drag start, in document coordinates.
+    var panOriginProvider: (() -> NSPoint)?
+    /// Called during a pan drag with start/current points in doc coords.
+    var onPanDrag: ((_ from: NSPoint, _ startOrigin: NSPoint, _ to: NSPoint) -> Void)?
+
+    private var panning = false
+    private var panStartDoc = NSPoint.zero
+    private var panStartOrigin = NSPoint.zero
+    /// Dragging a fitted image (no titlebar in immersive mode) moves the
+    /// window, matching Pixea. `performDrag` must only fire once per drag.
+    private var windowDragArmed = false
 
     private var animationLayer: CALayer?
     private var animationQuarterTurns = 0
@@ -117,11 +131,46 @@ final class ImageDocumentView: NSView {
         context.draw(image, in: bounds)
     }
 
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            onDoubleClick?()
-        } else {
-            super.mouseDown(with: event)
+    // MARK: - Mouse: double-click zoom, drag-to-pan, drag-to-move-window
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if canPanProvider?() == true {
+            addCursorRect(bounds, cursor: .openHand)
         }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if event.clickCount == 2 {
+            onDoubleClick?(point)
+            return
+        }
+        if canPanProvider?() == true {
+            panning = true
+            panStartDoc = point
+            panStartOrigin = panOriginProvider?() ?? .zero
+            NSCursor.closedHand.push()
+        } else {
+            // Never pannable: arm the window drag for this gesture instead.
+            windowDragArmed = true
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if panning {
+            onPanDrag?(panStartDoc, panStartOrigin, convert(event.locationInWindow, from: nil))
+        } else if windowDragArmed {
+            windowDragArmed = false
+            window?.performDrag(with: event)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if panning {
+            panning = false
+            NSCursor.pop()
+        }
+        windowDragArmed = false
     }
 }

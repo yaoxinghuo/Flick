@@ -57,6 +57,16 @@ final class ImageScrollView: NSScrollView {
         contentView = CenteringClipView(frame: bounds)
         let document = ImageDocumentView(frame: .zero)
         document.wantsLayer = true // needed for the page-drag transform
+        document.onDoubleClick = { [weak self] docPoint in
+            self?.toggleSmartZoom(atDocPoint: docPoint)
+        }
+        document.canPanProvider = { [weak self] in self?.canPan ?? false }
+        document.panOriginProvider = { [weak self] in
+            self?.contentView.bounds.origin ?? .zero
+        }
+        document.onPanDrag = { [weak self] from, startOrigin, to in
+            self?.dragPan(from: from, startOrigin: startOrigin, to: to)
+        }
         documentView = document
         hasVerticalScroller = true
         hasHorizontalScroller = true
@@ -386,5 +396,7 @@ final class ImageScrollView: NSScrollView {
 
     private func notify() {
         onMagnificationChanged?(magnification)
+        // Pan cursor depends on canPan, which magnification changes.
+        window?.invalidateCursorRects(for: document)
     }
 }

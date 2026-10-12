@@ -13,13 +13,44 @@ protocol ImageViewActionDelegate: AnyObject {
     func imageView(_ view: ImageView, didReceiveDroppedURLs urls: [URL])
 }
 
+/// Toolbar button tags. Kept stable so the controller can swap icons/state.
+private enum ChromeTag {
+    static let rotateLeft = 1
+    static let rotateRight = 2
+    static let fit = 3
+    static let actual = 4
+    static let playback = 5
+    static let zoomOut = 10
+    static let zoomIn = 11
+    static let prev = 12
+    static let next = 13
+    static let open = 14
+    static let filmstrip = 15
+    static let info = 16
+    static let fullScreen = 17
+}
+
 /// The window's content: an `ImageScrollView` canvas plus a loading spinner,
-/// a centered message label (empty state / errors) and a zoom HUD. Handles
-/// keyboard navigation, file dropping and cursor auto-hide in full screen.
+/// a centered message label (empty state / errors) and Pixea-style floating
+/// chrome — titlebar breadcrumb, top tool capsule, bottom control capsule,
+/// bottom-left status strip and a floating filmstrip. Chrome is hidden while
+/// idle; any mouse movement reveals it briefly, hovering inside a chrome
+/// region pins it, and fullscreen hides it together with the cursor.
 final class ImageView: NSView {
     weak var actionDelegate: ImageViewActionDelegate?
 
     let scrollView = ImageScrollView()
+
+    /// Action hooks for chrome buttons; wired by the controller.
+    var onOpen: (() -> Void)?
+    var onRotate: ((Int) -> Void)?             // quarter-turns delta
+    var onToggleInfoPanel: (() -> Void)?
+    var onToggleFilmstrip: (() -> Void)?
+    var onTogglePlayback: (() -> Void)?
+    var onFilmstripSelect: ((Int) -> Void)?
+    /// Called whenever magnification changes — the controller uses it to
+    /// decide whether a higher-resolution decode is needed.
+    var onZoomChanged: (() -> Void)?
 
     private let spinner: NSProgressIndicator = {
         let indicator = NSProgressIndicator()
@@ -39,49 +70,104 @@ final class ImageView: NSView {
         return label
     }()
 
-    private let zoomHUD = ZoomHUDView()
     private let infoPanel = InfoPanelView()
     private let infoPanelWidth: CGFloat = 260
     private let filmstrip = FilmstripView()
     private(set) var infoPanelVisible = false
 
-    /// User's filmstrip preference (persisted by the controller). In full
-    /// screen the strip hides and only floats up on bottom-edge hover.
+    /// User's filmstrip preference (persisted by the controller). The strip
+    /// floats over the image; hovering near the bottom edge reveals it
+    /// transiently even when the preference is off.
     private(set) var filmstripEnabled = false
     private var filmstripTransient = false
-    private var filmstripHideWorkItem: DispatchWorkItem?
+    private var filmstripHasContent = false
 
-    var onFilmstripSelect: ((Int) -> Void)?
+    // Chrome: floating capsules + breadcrumb + status strip. IUO because the
+    /// button target is `self`, which only exists after super.init.
+    private let titleCapsule = TitleCapsule()
+    private var topToolbar: ToolbarCapsule!
+    private var bottomBar: ToolbarCapsule!
+    private let statusStrip = StatusStrip()
+    private var chromeVisible = false
+    private var chromeHideWorkItem: DispatchWorkItem?
+    private var lastMousePoint: NSPoint?
 
-    /// Called whenever magnification changes — the controller uses it to
-    /// decide whether a higher-resolution decode is needed.
-    var onZoomChanged: (() -> Void)?
+    private var statusZoomText = ""
+    private var statusItems: [String] = []
 
     private var mouseTrackingArea: NSTrackingArea?
     private var isFullScreen = false
     private var cursorIsHidden = false
     private var cursorHideWorkItem: DispatchWorkItem?
     private var animator: PageTurnAnimator?
+    /// True while the placeholder message is showing (no image loaded).
+    private(set) var showsPlaceholder = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
 
+        topToolbar = ToolbarCapsule(items: [
+            .init(tag: ChromeTag.rotateLeft, symbols: ["rotate.left"],
+                  fallbackTitle: "左转", toolTip: "逆时针旋转", action: #selector(chromeRotateLeft)),
+            .init(tag: ChromeTag.rotateRight, symbols: ["rotate.right"],
+                  fallbackTitle: "右转", toolTip: "顺时针旋转", action: #selector(chromeRotateRight)),
+            .init(tag: ChromeTag.fit, symbols: ["aspectratio"],
+                  fallbackTitle: "适应", toolTip: "适应窗口", action: #selector(chromeFit)),
+            .init(tag: ChromeTag.actual, symbols: ["1.magnifyingglass"],
+                  fallbackTitle: "1x", toolTip: "实际大小", action: #selector(chromeActual)),
+            .init(tag: ChromeTag.playback, symbols: ["pause.fill"],
+                  fallbackTitle: "停", toolTip: "暂停动画", action: #selector(chromePlayback),
+                  separated: true),
+        ], target: self)
+        topToolbar.setHidden(true, forTag: ChromeTag.playback)
+
+        bottomBar = ToolbarCapsule(items: [
+            .init(tag: ChromeTag.zoomOut, symbols: ["minus.magnifyingglass"],
+                  fallbackTitle: "−", toolTip: "缩小", action: #selector(chromeZoomOut)),
+            .init(tag: ChromeTag.zoomIn, symbols: ["plus.magnifyingglass"],
+                  fallbackTitle: "+", toolTip: "放大", action: #selector(chromeZoomIn)),
+            .init(tag: ChromeTag.prev, symbols: ["chevron.left"],
+                  fallbackTitle: "←", toolTip: "上一张", action: #selector(chromePrev),
+                  separated: true),
+            .init(tag: ChromeTag.next, symbols: ["chevron.right"],
+                  fallbackTitle: "→", toolTip: "下一张", action: #selector(chromeNext)),
+            .init(tag: ChromeTag.open, symbols: ["folder"],
+                  fallbackTitle: "打开", toolTip: "打开…", action: #selector(chromeOpen),
+                  separated: true),
+            .init(tag: ChromeTag.filmstrip, symbols: ["film"],
+                  fallbackTitle: "缩略图", toolTip: "缩略图条", action: #selector(chromeFilmstrip)),
+            .init(tag: ChromeTag.info, symbols: ["info"],
+                  fallbackTitle: "i", toolTip: "信息面板", action: #selector(chromeInfo)),
+            .init(tag: ChromeTag.fullScreen, symbols: ["arrow.up.left.and.arrow.down.right"],
+                  fallbackTitle: "全屏", toolTip: "全屏", action: #selector(chromeFullScreen),
+                  separated: true),
+        ], target: self)
+
         scrollView.frame = bounds
         scrollView.onMagnificationChanged = { [weak self] magnification in
-            self?.zoomHUD.show(text: "\(Int((magnification * 100).rounded()))%")
+            self?.statusZoomText = "\(Int((magnification * 100).rounded()))%"
+            self?.pushStatus()
             self?.onZoomChanged?()
         }
         addSubview(scrollView)
-
-        infoPanel.isHidden = true
-        addSubview(infoPanel)
 
         filmstrip.isHidden = true
         filmstrip.onSelect = { [weak self] index in
             self?.onFilmstripSelect?(index)
         }
         addSubview(filmstrip)
+
+        infoPanel.isHidden = true
+        infoPanel.onClose = { [weak self] in
+            self?.onToggleInfoPanel?()
+        }
+        addSubview(infoPanel)
+
+        for capsule in [titleCapsule, topToolbar!, bottomBar!, statusStrip] {
+            capsule.alphaValue = 0
+            addSubview(capsule)
+        }
 
         addSubview(spinner)
         addSubview(messageLabel)
@@ -91,8 +177,6 @@ final class ImageView: NSView {
             messageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             messageLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-
-        addSubview(zoomHUD)
 
         animator = PageTurnAnimator(hostView: self, scrollView: scrollView)
         scrollView.pageSwipeDelegate = self
@@ -105,50 +189,205 @@ final class ImageView: NSView {
 
     // MARK: - Layout
 
-    /// Sidebar layout: scroll view takes the space left of the info panel and
-    /// above the filmstrip. In full screen the strip floats over the content
-    /// instead of shrinking it, so hover reveal doesn't refit the image.
+    /// Everything floats: the scroll view fills the window edge-to-edge
+    /// (under the transparent titlebar), the info panel and filmstrip hover
+    /// over the image instead of taking layout space.
     override func layout() {
         super.layout()
-        let panelWidth = infoPanelVisible ? infoPanelWidth : 0
-        let stripVisible = filmstripEnabled && (!isFullScreen || filmstripTransient)
-        let floating = isFullScreen
-        let stripHeight = stripVisible ? FilmstripView.height : 0
+        scrollView.frame = bounds
 
-        scrollView.frame = NSRect(
-            x: 0, y: floating ? 0 : stripHeight,
-            width: bounds.width - panelWidth,
-            height: bounds.height - (floating ? 0 : stripHeight)
+        let stripVisible = filmstripEnabled || filmstripTransient
+        let stripShown = stripVisible && filmstripHasContent
+
+        // Bottom cluster stacks like Pixea: status strip hugs the bottom-left
+        // corner, the control capsule sits just above it, and the filmstrip
+        // floats above the capsule.
+        statusStrip.isHidden = statusZoomText.isEmpty && statusIndexText.isEmpty
+            && statusItems.isEmpty
+        statusStrip.frame = NSRect(
+            x: 10,
+            y: 8,
+            width: min(statusStrip.fittingSize.width, bounds.width - 20),
+            height: 22
         )
-        infoPanel.frame = NSRect(
-            x: bounds.width - panelWidth, y: 0,
-            width: panelWidth, height: bounds.height
+        let bottomSize = bottomBar.fittingSize
+        bottomBar.frame = NSRect(
+            x: (bounds.width - bottomSize.width) / 2,
+            y: statusStrip.frame.maxY + 8,
+            width: bottomSize.width,
+            height: bottomSize.height
         )
+        let stripWidth = filmstrip.preferredWidth(maxWidth: bounds.width - 48)
         filmstrip.frame = NSRect(
-            x: 0, y: 0,
-            width: bounds.width - panelWidth, height: stripHeight
+            x: (bounds.width - stripWidth) / 2,
+            y: bottomBar.frame.maxY + 8,
+            width: stripWidth,
+            height: FilmstripView.height
         )
-        filmstrip.isHidden = stripHeight == 0
-        if stripHeight > 0 {
+        filmstrip.isHidden = !stripShown
+        if stripShown {
             filmstrip.ensureLoaded()
         }
-        // Keep the HUD pinned to the scroll view's right edge, above the strip.
-        zoomHUD.frame.origin = NSPoint(
-            x: scrollView.frame.maxX - zoomHUD.frame.width - 12,
-            y: scrollView.frame.minY + 12
+
+        infoPanel.frame = NSRect(
+            x: bounds.width - infoPanelWidth - 8,
+            y: 8,
+            width: infoPanelWidth,
+            height: bounds.height - 16
         )
+
+        let topSize = topToolbar.fittingSize
+        topToolbar.frame = NSRect(
+            x: (bounds.width - topSize.width) / 2,
+            y: bounds.height - topSize.height - 8,
+            width: topSize.width,
+            height: topSize.height
+        )
+        // Breadcrumb shares the titlebar row with the traffic lights; on
+        // narrow windows it shrinks, then hides rather than collide with
+        // the top toolbar.
+        let maxBreadcrumb = topToolbar.frame.minX - 88
+        let breadcrumbWidth = min(titleCapsule.fittingSize.width, maxBreadcrumb)
+        if breadcrumbWidth < 48 || breadcrumbText.isEmpty {
+            titleCapsule.isHidden = true
+        } else {
+            titleCapsule.isHidden = false
+            titleCapsule.frame = NSRect(
+                x: 76,
+                y: bounds.height - 32,
+                width: breadcrumbWidth,
+                height: 24
+            )
+        }
     }
 
-    // MARK: - Info panel
+    // MARK: - Chrome visibility
+
+    /// All always-on-hover chrome except the filmstrip (it has its own
+    /// enabled/transient logic) and the info panel (toggled state).
+    private var chromeViews: [NSView] {
+        [titleCapsule, topToolbar, bottomBar, statusStrip]
+    }
+
+    private func setChrome(alpha: CGFloat) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            for view in chromeViews {
+                view.animator().alphaValue = alpha
+            }
+        }
+        setTrafficLightsHidden(alpha == 0)
+    }
+
+    private func setTrafficLightsHidden(_ hidden: Bool) {
+        for buttonType in [NSWindow.ButtonType.closeButton,
+                           .miniaturizeButton, .zoomButton] {
+            window?.standardWindowButton(buttonType)?.isHidden = hidden
+        }
+    }
+
+    /// Reveal chrome and (re)start the idle countdown unless the pointer is
+    /// resting inside a chrome region.
+    func showChrome() {
+        if !chromeVisible {
+            chromeVisible = true
+            setChrome(alpha: 1)
+        }
+        if let point = lastMousePoint, isInsideChrome(point) {
+            chromeHideWorkItem?.cancel()
+        } else {
+            scheduleChromeHide()
+        }
+    }
+
+    private func scheduleChromeHide(delay: TimeInterval = 1.8) {
+        chromeHideWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.hideChrome()
+        }
+        chromeHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func hideChrome() {
+        // Never pull the UI out from under the pointer.
+        if let point = lastMousePoint, isInsideChrome(point) {
+            scheduleChromeHide()
+            return
+        }
+        chromeHideWorkItem?.cancel()
+        guard chromeVisible || filmstripTransient else { return }
+        chromeVisible = false
+        setChrome(alpha: 0)
+        filmstripTransient = false
+        needsLayout = true
+    }
+
+    /// Bottom edge height where hovering floats the strip / pins chrome.
+    private var bottomHotZone: CGFloat {
+        let stripOut = filmstripEnabled || filmstripTransient
+        return stripOut ? filmstrip.frame.maxY + 16 : bottomBar.frame.maxY + 14
+    }
+
+    /// Regions where the pointer pins chrome visible: every capsule, the
+    /// titlebar row (traffic lights), and the filmstrip hover zone.
+    private func isInsideChrome(_ point: NSPoint) -> Bool {
+        if point.y > bounds.height - 40 { return true }        // titlebar row
+        if point.y < bottomHotZone { return true }             // bottom cluster
+        for view in chromeViews where !view.isHidden && view.alphaValue > 0 {
+            if view.frame.contains(point) { return true }
+        }
+        return false
+    }
+
+    // MARK: - Info panel / status strip / breadcrumb
 
     func setInfoPanelVisible(_ visible: Bool) {
         infoPanelVisible = visible
         infoPanel.isHidden = !visible
+        bottomBar.setHighlighted(visible, forTag: ChromeTag.info)
         needsLayout = true
     }
 
     func updateInfoPanel(metadata: ImageMetadata?) {
         infoPanel.update(metadata: metadata)
+        guard let metadata else {
+            statusItems = []
+            pushStatus()
+            return
+        }
+        var items: [String] = []
+        if let dims = metadata.pixelSizeText {
+            items.append(metadata.dpiText.map { "\(dims) (\($0))" } ?? dims)
+        }
+        if let size = metadata.fileSizeText { items.append(size) }
+        if let date = metadata.createdText { items.append(date) }
+        statusItems = items
+        pushStatus()
+    }
+
+    /// Status-strip index column ("3 / 12").
+    func setStatusIndex(_ index: Int, total: Int) {
+        statusIndexText = total > 0 ? "\(index + 1)/\(total)" : ""
+        pushStatus()
+    }
+
+    private var statusIndexText = ""
+
+    private func pushStatus() {
+        statusStrip.setItems([statusZoomText, statusIndexText]
+            .filter { !$0.isEmpty } + statusItems)
+        statusStrip.isHidden = statusZoomText.isEmpty && statusIndexText.isEmpty
+            && statusItems.isEmpty
+        needsLayout = true
+    }
+
+    /// Breadcrumb next to the traffic lights: "folder ▸ file.png".
+    /// Hidden entirely when no file is loaded.
+    func setTitleInfo(folder: String, file: String) {
+        breadcrumbText = file
+        titleCapsule.setTitle(folder: folder, file: file)
+        needsLayout = true
     }
 
     // MARK: - Filmstrip
@@ -156,11 +395,14 @@ final class ImageView: NSView {
     func setFilmstripEnabled(_ enabled: Bool) {
         filmstripEnabled = enabled
         if !enabled { filmstripTransient = false }
+        bottomBar.setHighlighted(enabled, forTag: ChromeTag.filmstrip)
         needsLayout = true
     }
 
     func setFilmstripFiles(_ urls: [URL]) {
+        filmstripHasContent = urls.count > 1
         filmstrip.setFiles(urls)
+        needsLayout = true
     }
 
     func setFilmstripIndex(_ index: Int) {
@@ -171,22 +413,34 @@ final class ImageView: NSView {
         filmstrip.cachedThumbnail(for: index)
     }
 
+    /// Bottom-edge hover reveals the strip when the preference is off;
+    /// bottom-bar button toggles the persisted preference instead.
+    func toggleFilmstripPreference() {
+        onToggleFilmstrip?()
+    }
+
     // MARK: - Content
 
     func setImage(_ image: CGImage?, displaySize: NSSize) {
+        showsPlaceholder = false
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
         scrollView.setImage(image, displaySize: displaySize)
+        setPlaybackVisible(false)
+        showChrome()
     }
 
     func setAnimated(_ animated: AnimatedImage, displaySize: NSSize, quarterTurns: Int) {
+        showsPlaceholder = false
         messageLabel.isHidden = true
         setLoading(false)
         animator?.finishImmediately()
         scrollView.setAnimatedContent(
             animated, displaySize: displaySize, quarterTurns: quarterTurns
         )
+        setPlaybackVisible(true)
+        showChrome()
     }
 
     func updateAnimatedRotation(quarterTurns: Int, displaySize: NSSize) {
@@ -206,12 +460,18 @@ final class ImageView: NSView {
 
     /// Placeholder text shown when there is no image (empty state or error).
     func setMessage(_ message: String) {
+        showsPlaceholder = true
         setLoading(false)
         scrollView.setImage(nil, displaySize: .zero)
-        zoomHUD.hideImmediately()
+        statusZoomText = ""
+        statusIndexText = ""
+        statusItems = []
+        pushStatus()
         messageLabel.stringValue = message
         messageLabel.isHidden = false
     }
+
+    private var breadcrumbText = ""
 
     func setLoading(_ loading: Bool) {
         messageLabel.isHidden = true
@@ -225,6 +485,21 @@ final class ImageView: NSView {
     func setBackgroundColor(_ color: NSColor) {
         layer?.backgroundColor = color.cgColor
         scrollView.backgroundColor = color
+    }
+
+    private func setPlaybackVisible(_ visible: Bool) {
+        topToolbar.setHidden(!visible, forTag: ChromeTag.playback)
+        if visible { updatePlaybackIcon() }
+    }
+
+    private func updatePlaybackIcon() {
+        let paused = scrollView.isAnimationPaused
+        topToolbar.setSymbols(
+            paused ? ["play.fill"] : ["pause.fill"],
+            fallbackTitle: paused ? "播" : "停",
+            forTag: ChromeTag.playback
+        )
+        topToolbar.setHidden(false, forTag: ChromeTag.playback)
     }
 
     // MARK: - Page-turn animation
@@ -265,8 +540,6 @@ final class ImageView: NSView {
     func setFullScreen(_ fullScreen: Bool) {
         isFullScreen = fullScreen
         filmstripTransient = false
-        filmstripHideWorkItem?.cancel()
-        needsLayout = true
         cursorHideWorkItem?.cancel()
         if fullScreen {
             scheduleCursorHide()
@@ -274,6 +547,8 @@ final class ImageView: NSView {
             cursorIsHidden = false
             NSCursor.unhide()
         }
+        showChrome()
+        needsLayout = true
     }
 
     private func scheduleCursorHide() {
@@ -282,6 +557,7 @@ final class ImageView: NSView {
             guard self?.isFullScreen == true, self?.cursorIsHidden == false else { return }
             self?.cursorIsHidden = true
             NSCursor.hide()
+            self?.hideChrome()
         }
         cursorHideWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: item)
@@ -294,7 +570,7 @@ final class ImageView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -304,34 +580,33 @@ final class ImageView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        guard isFullScreen else { return }
-        if cursorIsHidden {
-            cursorIsHidden = false
-            NSCursor.unhide()
+        lastMousePoint = convert(event.locationInWindow, from: nil)
+        if isFullScreen {
+            if cursorIsHidden {
+                cursorIsHidden = false
+                NSCursor.unhide()
+            }
+            scheduleCursorHide()
         }
-        scheduleCursorHide()
-        updateFilmstripHover(mouseY: event.locationInWindow.y)
+        // Hover near the bottom edge floats the strip when the persisted
+        /// preference is off; moving back up dismisses it promptly.
+        if !filmstripEnabled, filmstripHasContent, let point = lastMousePoint {
+            let want = point.y < (filmstripTransient
+                ? filmstrip.frame.maxY + 16
+                : 160)
+            if want != filmstripTransient {
+                filmstripTransient = want
+                needsLayout = true
+            }
+        }
+        showChrome()
     }
 
-    /// Bottom-edge hover reveals the filmstrip in full screen. Hysteresis on
-    /// the hide threshold keeps it from flickering at the boundary.
-    private func updateFilmstripHover(mouseY: CGFloat) {
-        guard filmstripEnabled else { return }
-        if !filmstripTransient, mouseY < 44 {
-            filmstripHideWorkItem?.cancel()
-            filmstripTransient = true
-            needsLayout = true
-        } else if filmstripTransient, mouseY > FilmstripView.height + 24 {
-            filmstripHideWorkItem?.cancel()
-            let item = DispatchWorkItem { [weak self] in
-                self?.filmstripTransient = false
-                self?.needsLayout = true
-            }
-            filmstripHideWorkItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
-        } else {
-            filmstripHideWorkItem?.cancel()
-        }
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        lastMousePoint = nil
+        // Pointer left the window — pull the chrome promptly.
+        scheduleChromeHide(delay: 0.2)
     }
 
     // MARK: - Keyboard
@@ -370,6 +645,37 @@ final class ImageView: NSView {
         default:
             super.keyDown(with: event)
         }
+    }
+
+    // MARK: - Empty-state double-click (Photoshop-style open)
+
+    override func mouseDown(with event: NSEvent) {
+        if showsPlaceholder, event.clickCount == 2 {
+            onOpen?()
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    // MARK: - Chrome button actions
+
+    @objc private func chromeRotateLeft() { onRotate?(-1) }
+    @objc private func chromeRotateRight() { onRotate?(1) }
+    @objc private func chromeFit() { scrollView.zoomToFit() }
+    @objc private func chromeActual() { scrollView.zoomToActual() }
+    @objc private func chromePlayback() {
+        onTogglePlayback?()
+        updatePlaybackIcon()
+    }
+    @objc private func chromeZoomOut() { scrollView.zoomOut() }
+    @objc private func chromeZoomIn() { scrollView.zoomIn() }
+    @objc private func chromePrev() { actionDelegate?.imageViewDidRequestPrevious(self) }
+    @objc private func chromeNext() { actionDelegate?.imageViewDidRequestNext(self) }
+    @objc private func chromeOpen() { onOpen?() }
+    @objc private func chromeFilmstrip() { onToggleFilmstrip?() }
+    @objc private func chromeInfo() { onToggleInfoPanel?() }
+    @objc private func chromeFullScreen() {
+        actionDelegate?.imageViewDidRequestToggleFullScreen(self)
     }
 
     // MARK: - Drag & Drop

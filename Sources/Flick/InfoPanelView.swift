@@ -1,10 +1,12 @@
 import AppKit
 import FlickCore
 
-/// Right-edge sidebar showing file + image + EXIF metadata.
-/// Text is selectable/copyable; missing fields are simply absent.
+/// Floating inspector panel on the right edge showing file + image + EXIF
+/// metadata. Text is selectable/copyable; missing fields are simply absent.
 final class InfoPanelView: NSVisualEffectView {
     private let textView: NSTextView
+    /// Wired by the container to the controller's close action.
+    var onClose: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
         let scroll = NSScrollView()
@@ -33,11 +35,29 @@ final class InfoPanelView: NSVisualEffectView {
 
         super.init(frame: frameRect)
         material = .sidebar
-        blendingMode = .withinWindow
+        blendingMode = .behindWindow
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
+
+        let closeButton = NSButton(
+            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭")!,
+            target: self,
+            action: #selector(closeTapped)
+        )
+        closeButton.isBordered = false
+        closeButton.contentTintColor = .secondaryLabelColor
+        closeButton.toolTip = "关闭信息面板"
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(closeButton)
 
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)
         NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            closeButton.widthAnchor.constraint(equalToConstant: 18),
+            closeButton.heightAnchor.constraint(equalToConstant: 18),
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -58,6 +78,10 @@ final class InfoPanelView: NSVisualEffectView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func closeTapped() {
+        onClose?()
+    }
 
     func update(metadata: ImageMetadata?) {
         guard let metadata else {

@@ -83,17 +83,18 @@ private final class ThumbnailItem: NSCollectionViewItem {
     }
 }
 
-/// Bottom filmstrip: a horizontal `NSCollectionView` of thumbnails. The
-/// current image stays selected and centered; clicks and arrow-driven
-/// selection report through `onSelect`.
+/// Floating filmstrip capsule: a horizontal `NSCollectionView` of thumbnails
+/// centered above the bottom bar. The current image stays selected and
+/// centered; clicks and arrow-driven selection report through `onSelect`.
 final class FilmstripView: NSView {
-    static let height: CGFloat = 92
-    private static let itemSize = NSSize(width: 80, height: 80)
+    static let height: CGFloat = 68
+    private static let itemSize = NSSize(width: 56, height: 56)
+    private static let spacing: CGFloat = 4
 
     var onSelect: ((Int) -> Void)?
 
     private lazy var thumbnailStore = ThumbnailStore(
-        maxPixelSize: Int(160 * (NSScreen.main?.backingScaleFactor ?? 2))
+        maxPixelSize: Int(64 * (NSScreen.main?.backingScaleFactor ?? 2))
     )
     private let collectionView = NSCollectionView()
     private var scroll: NSScrollView!
@@ -104,13 +105,14 @@ final class FilmstripView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor
-            .withAlphaComponent(0.35).cgColor
+        layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.72).cgColor
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
 
         let layout = NSCollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
         layout.itemSize = Self.itemSize
-        layout.minimumInteritemSpacing = 4
+        layout.minimumInteritemSpacing = Self.spacing
         layout.sectionInset = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
 
         collectionView.collectionViewLayout = layout
@@ -136,6 +138,14 @@ final class FilmstripView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     // MARK: - Content
+
+    /// Width the strip wants for `maxWidth`: enough for all cells, clamped so
+    /// narrow windows show fewer (scrollable) instead of overflowing.
+    func preferredWidth(maxWidth: CGFloat) -> CGFloat {
+        let cell = Self.itemSize.width + Self.spacing
+        let content = CGFloat(urls.count) * cell + 12 - Self.spacing
+        return max(min(content, maxWidth), min(2 * cell + 12, maxWidth))
+    }
 
     func setFiles(_ newURLs: [URL]) {
         urls = newURLs

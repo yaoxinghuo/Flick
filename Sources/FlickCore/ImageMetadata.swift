@@ -25,6 +25,26 @@ public struct ImageMetadata: Equatable {
     }
 
     public let sections: [Section]
+
+    /// Compact values for the status strip (nil when unavailable).
+    public let pixelSizeText: String?   // "413 × 626"
+    public let dpiText: String?         // "300dpi"
+    public let fileSizeText: String?    // "395 KB"
+    public let createdText: String?     // localized date
+
+    public init(
+        sections: [Section],
+        pixelSizeText: String? = nil,
+        dpiText: String? = nil,
+        fileSizeText: String? = nil,
+        createdText: String? = nil
+    ) {
+        self.sections = sections
+        self.pixelSizeText = pixelSizeText
+        self.dpiText = dpiText
+        self.fileSizeText = fileSizeText
+        self.createdText = createdText
+    }
 }
 
 /// Reads file attributes + ImageIO properties + EXIF/TIFF/GPS dictionaries.
@@ -50,7 +70,53 @@ public enum ImageMetadataReader {
         if let exif = exifSection(url: url) {
             sections.append(exif)
         }
-        return ImageMetadata(sections: sections)
+        return ImageMetadata(
+            sections: sections,
+            pixelSizeText: pixelSizeText(url: url),
+            dpiText: dpiText(url: url),
+            fileSizeText: fileSizeText(url: url),
+            createdText: createdText(url: url)
+        )
+    }
+
+    // MARK: - Status-strip values
+
+    private static func imageProperties(url: URL) -> [CFString: Any]? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    }
+
+    private static func pixelSizeText(url: URL) -> String? {
+        guard let props = imageProperties(url: url),
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return "\(w) × \(h)"
+    }
+
+    private static func dpiText(url: URL) -> String? {
+        guard let props = imageProperties(url: url),
+              let dpi = props[kCGImagePropertyDPIWidth] as? Double else { return nil }
+        return "\(Int(dpi))dpi"
+    }
+
+    private static func fileSizeText(url: URL) -> String? {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return nil
+        }
+        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+    }
+
+    private static let compactDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f
+    }()
+
+    private static func createdText(url: URL) -> String? {
+        guard let date = try? url.resourceValues(forKeys: [.creationDateKey]).creationDate else {
+            return nil
+        }
+        return "创建于 " + compactDateFormatter.string(from: date)
     }
 
     // MARK: - File section

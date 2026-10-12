@@ -28,10 +28,11 @@ final class MainWindowController: NSWindowController {
     private var currentRealSize: CGSize = .zero
     private var metadataRequestURL: URL?
     private var infoPanelVisible = UserDefaults.standard.bool(forKey: "infoPanelVisible")
-    /// Filmstrip defaults to on until the user toggles it off.
+    /// Filmstrip defaults to off: hovering the bottom edge reveals it
+    /// transiently, the toggle pins it on.
     private var filmstripEnabled: Bool = {
         let defaults = UserDefaults.standard
-        return defaults.object(forKey: "filmstripEnabled") as? Bool ?? true
+        return defaults.object(forKey: "filmstripEnabled") as? Bool ?? false
     }()
     private var backgroundStyle = BackgroundStyle.load() {
         didSet { backgroundStyle.save() }
@@ -48,11 +49,16 @@ final class MainWindowController: NSWindowController {
     init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 750),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable,
+                        .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = Flick.appName
+        // Immersive look: content runs under an invisible titlebar; the
+        // traffic lights only appear while chrome is revealed on hover.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.minSize = NSSize(width: 400, height: 300)
         window.center()
         super.init(window: window)
@@ -69,8 +75,13 @@ final class MainWindowController: NSWindowController {
         imageView.onFilmstripSelect = { [weak self] index in
             self?.goTo(index)
         }
+        imageView.onOpen = { [weak self] in self?.openDocument(nil) }
+        imageView.onRotate = { [weak self] delta in self?.rotate(by: delta) }
+        imageView.onToggleInfoPanel = { [weak self] in self?.toggleInfoPanel(nil) }
+        imageView.onToggleFilmstrip = { [weak self] in self?.toggleFilmstrip(nil) }
+        imageView.onTogglePlayback = { [weak self] in self?.toggleAnimationPlayback(nil) }
         window.makeFirstResponder(imageView)
-        imageView.setMessage("打开图片或文件夹开始浏览（⌘O），或将图片拖入窗口")
+        imageView.setMessage("打开图片或文件夹开始浏览（⌘O），双击空白处或拖入图片")
     }
 
     @available(*, unavailable)
@@ -147,6 +158,8 @@ final class MainWindowController: NSWindowController {
         isAnimatedContent = false
         imageView.setMessage(text)
         imageView.updateInfoPanel(metadata: nil)
+        imageView.setTitleInfo(folder: "", file: "")
+        imageView.setStatusIndex(-1, total: 0)
         imageView.setFilmstripFiles([])
         window?.title = Flick.appName
         window?.representedURL = nil
@@ -175,6 +188,8 @@ final class MainWindowController: NSWindowController {
             isAnimatedContent = false
             imageView.setMessage("没有图片")
             imageView.updateInfoPanel(metadata: nil)
+            imageView.setTitleInfo(folder: "", file: "")
+            imageView.setStatusIndex(-1, total: 0)
             window?.title = Flick.appName
             window?.representedURL = nil
             return
@@ -186,8 +201,13 @@ final class MainWindowController: NSWindowController {
 
         window?.title = "\(file.fileName) — \(navigator.index + 1) / \(files.count)"
         window?.representedURL = file.url
+        imageView.setTitleInfo(
+            folder: file.url.deletingLastPathComponent().lastPathComponent,
+            file: file.fileName
+        )
+        imageView.setStatusIndex(navigator.index, total: files.count)
         prefetchNeighbors()
-        updateInfoPanelIfVisible()
+        loadMetadata()
         imageView.setFilmstripIndex(navigator.index)
 
         if let cached = store.cachedImage(for: file.url, maxPixelSize: Self.displayCap) {
@@ -223,6 +243,7 @@ final class MainWindowController: NSWindowController {
                 displaySize: displaySize(of: loaded.realSize),
                 quarterTurns: rotation
             )
+            fitWindowToImage()
         } else if let still = loaded.still {
             isAnimatedContent = false
             baseImage = still
@@ -231,8 +252,56 @@ final class MainWindowController: NSWindowController {
                 displayImage(from: still),
                 displaySize: displaySize(of: loaded.realSize)
             )
+            fitWindowToImage()
             considerHighResLoad()
         }
+    }
+
+    /// Sizes the window to the image (Pixea-style): big images shrink to the
+    /// screen's visible area, small ones grow only up to a usable minimum.
+    /// No-op in full screen or when nothing is loaded.
+    private func fitWindowToImage() {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        let imageSize = displaySize(of: currentRealSize)
+        guard imageSize.width > 0, imageSize.height > 0 else { return }
+        let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let visible = screen?.visibleFrame else { return }
+
+        let maxW = visible.width * 0.92
+        let maxH = visible.height * 0.92
+        let minW: CGFloat = 340
+        let minH: CGFloat = 240
+
+        let shrink = min(maxW / imageSize.width, maxH / imageSize.height)
+        let growToMin = max(minW / imageSize.width, minH / imageSize.height)
+        var scale = min(shrink, 1)
+        if scale == 1, growToMin > 1 {
+            scale = min(growToMin, shrink)
+        }
+        var newSize = NSSize(
+            width: (imageSize.width * scale).rounded(),
+            height: (imageSize.height * scale).rounded()
+        )
+        // Pathological aspect ratios still get a usable window.
+        newSize.width = max(240, min(newSize.width, maxW))
+        newSize.height = max(160, min(newSize.height, maxH))
+
+        let old = window.frame
+        // Same size → nothing to do (flipping through same-format images).
+        guard abs(old.width - newSize.width) > 0.5
+                || abs(old.height - newSize.height) > 0.5 else { return }
+
+        var origin = NSPoint(
+            x: old.midX - newSize.width / 2,
+            y: old.midY - newSize.height / 2
+        )
+        origin.x = max(visible.minX + 8, min(origin.x, visible.maxX - newSize.width - 8))
+        origin.y = max(visible.minY + 8, min(origin.y, visible.maxY - newSize.height - 8))
+        window.setFrame(
+            NSRect(origin: origin, size: newSize),
+            display: true,
+            animate: true
+        )
     }
 
     /// Rotated view size: odd quarter-turns swap width/height.
@@ -328,14 +397,16 @@ final class MainWindowController: NSWindowController {
                 quarterTurns: rotation,
                 displaySize: displaySize(of: currentRealSize)
             )
-            return
+        } else {
+            guard let base = baseImage else { return }
+            rotation = (rotation + quarterTurns + 4) % 4
+            imageView.updateImage(
+                displayImage(from: base),
+                displaySize: displaySize(of: currentRealSize)
+            )
         }
-        guard let base = baseImage else { return }
-        rotation = (rotation + quarterTurns + 4) % 4
-        imageView.updateImage(
-            displayImage(from: base),
-            displaySize: displaySize(of: currentRealSize)
-        )
+        // Rotated aspect no longer matches the window — refit.
+        fitWindowToImage()
     }
 
     // MARK: - Animation / info panel
@@ -348,7 +419,7 @@ final class MainWindowController: NSWindowController {
         infoPanelVisible.toggle()
         UserDefaults.standard.set(infoPanelVisible, forKey: "infoPanelVisible")
         imageView.setInfoPanelVisible(infoPanelVisible)
-        updateInfoPanelIfVisible()
+        loadMetadata()
     }
 
     @objc func toggleFilmstrip(_ sender: Any?) {
@@ -357,9 +428,9 @@ final class MainWindowController: NSWindowController {
         imageView.setFilmstripEnabled(filmstripEnabled)
     }
 
-    /// Loads metadata off the main thread whenever the panel is on screen.
-    private func updateInfoPanelIfVisible() {
-        guard infoPanelVisible else { return }
+    /// Metadata feeds both the info panel and the status strip, so it loads
+    /// off the main thread for every image, panel open or not.
+    private func loadMetadata() {
         let url = currentFile?.url
         metadataRequestURL = url
         guard let url else {

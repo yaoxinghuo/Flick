@@ -69,6 +69,32 @@ enum MenuBuilder {
         sortMenu.addItem(asc)
         sortMenu.addItem(desc)
         menu.addItem(sortItem)
+        menu.addItem(.separator())
+
+        menu.addItem(make("放大", #selector(MainWindowController.zoomIn(_:)), "="))
+        menu.addItem(make("缩小", #selector(MainWindowController.zoomOut(_:)), "-"))
+        menu.addItem(make("适应窗口", #selector(MainWindowController.zoomToFit(_:)), "0"))
+        menu.addItem(make("实际大小", #selector(MainWindowController.zoomToActualSize(_:)), "1"))
+        menu.addItem(make("填满窗口", #selector(MainWindowController.zoomToFill(_:)), "2"))
+        menu.addItem(.separator())
+
+        menu.addItem(make("顺时针旋转", #selector(MainWindowController.rotateRight(_:)), "r"))
+        menu.addItem(make("逆时针旋转", #selector(MainWindowController.rotateLeft(_:)), "r", [.command, .shift]))
+        menu.addItem(make("切换图片时保持旋转角度", #selector(MainWindowController.toggleKeepRotation(_:))))
+        menu.addItem(.separator())
+
+        let backgroundItem = NSMenuItem(title: "背景", action: nil, keyEquivalent: "")
+        let backgroundMenu = NSMenu(title: "背景")
+        backgroundItem.submenu = backgroundMenu
+        for style in BackgroundStyle.allCases {
+            let i = make(style.displayName, #selector(MainWindowController.setBackground(_:)))
+            i.representedObject = style.rawValue
+            backgroundMenu.addItem(i)
+        }
+        menu.addItem(backgroundItem)
+        menu.addItem(.separator())
+
+        menu.addItem(make("进入全屏", #selector(MainWindowController.toggleFullScreen(_:)), "f", [.command, .control]))
 
         return item
     }

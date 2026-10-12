@@ -5,19 +5,18 @@ protocol ImageViewActionDelegate: AnyObject {
     func imageViewDidRequestPrevious(_ view: ImageView)
     func imageViewDidRequestFirst(_ view: ImageView)
     func imageViewDidRequestLast(_ view: ImageView)
+    func imageViewDidRequestToggleFullScreen(_ view: ImageView)
+    func imageViewDidRequestExitFullScreen(_ view: ImageView)
     func imageView(_ view: ImageView, didReceiveDroppedURLs urls: [URL])
 }
 
-/// The single-image canvas. Draws the current `CGImage` aspect-fit on a dark
-/// background, plus placeholder/help text. Handles keyboard navigation and
-/// file dropping. Zoom/pan arrive via `NSScrollView` in a later milestone, so
-/// this view stays deliberately simple.
+/// The window's content: an `ImageScrollView` canvas plus a loading spinner,
+/// a centered message label (empty state / errors) and a zoom HUD. Handles
+/// keyboard navigation, file dropping and cursor auto-hide in full screen.
 final class ImageView: NSView {
     weak var actionDelegate: ImageViewActionDelegate?
 
-    private(set) var image: CGImage?
-    private var message: String?
-    private var loading = false
+    let scrollView = ImageScrollView()
 
     private let spinner: NSProgressIndicator = {
         let indicator = NSProgressIndicator()
@@ -28,14 +27,45 @@ final class ImageView: NSView {
         return indicator
     }()
 
+    private let messageLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 15)
+        label.textColor = .secondaryLabelColor
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let zoomHUD = ZoomHUDView()
+
+    private var mouseTrackingArea: NSTrackingArea?
+    private var isFullScreen = false
+    private var cursorIsHidden = false
+    private var cursorHideWorkItem: DispatchWorkItem?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+
+        scrollView.frame = bounds
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.onMagnificationChanged = { [weak self] magnification in
+            self?.zoomHUD.show(text: "\(Int((magnification * 100).rounded()))%")
+        }
+        addSubview(scrollView)
+
         addSubview(spinner)
+        addSubview(messageLabel)
         NSLayoutConstraint.activate([
             spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+            messageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            messageLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+
+        zoomHUD.autoresizingMask = [.minXMargin, .maxYMargin]
+        addSubview(zoomHUD)
+
         registerForDraggedTypes([.fileURL])
     }
 
@@ -45,68 +75,85 @@ final class ImageView: NSView {
     // MARK: - Content
 
     func setImage(_ image: CGImage?) {
-        self.image = image
-        self.message = nil
+        messageLabel.isHidden = true
         setLoading(false)
-        needsDisplay = true
+        scrollView.setImage(image)
+    }
+
+    func updateImage(_ image: CGImage) {
+        scrollView.updateImage(image)
     }
 
     /// Placeholder text shown when there is no image (empty state or error).
     func setMessage(_ message: String) {
-        self.image = nil
-        self.message = message
         setLoading(false)
-        needsDisplay = true
+        scrollView.setImage(nil)
+        zoomHUD.hideImmediately()
+        messageLabel.stringValue = message
+        messageLabel.isHidden = false
     }
 
     func setLoading(_ loading: Bool) {
-        self.loading = loading
+        messageLabel.isHidden = true
         if loading {
-            self.message = nil
             spinner.startAnimation(nil)
         } else {
             spinner.stopAnimation(nil)
         }
-        needsDisplay = true
     }
 
-    // MARK: - Drawing
+    func setBackgroundColor(_ color: NSColor) {
+        layer?.backgroundColor = color.cgColor
+        scrollView.backgroundColor = color
+    }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.11, alpha: 1).setFill()
-        dirtyRect.fill()
+    // MARK: - Full screen
 
-        if let image {
-            let rect = aspectFitRect(
-                imageSize: NSSize(width: image.width, height: image.height),
-                in: bounds
-            )
-            NSGraphicsContext.current?.imageInterpolation = .high
-            NSGraphicsContext.current?.cgContext.draw(image, in: rect)
-        } else if let message, !loading {
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 15),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let size = (message as NSString).size(withAttributes: attributes)
-            let origin = NSPoint(
-                x: bounds.midX - size.width / 2,
-                y: bounds.midY - size.height / 2
-            )
-            (message as NSString).draw(at: origin, withAttributes: attributes)
+    func setFullScreen(_ fullScreen: Bool) {
+        isFullScreen = fullScreen
+        cursorHideWorkItem?.cancel()
+        if fullScreen {
+            scheduleCursorHide()
+        } else if cursorIsHidden {
+            cursorIsHidden = false
+            NSCursor.unhide()
         }
     }
 
-    private func aspectFitRect(imageSize: NSSize, in rect: NSRect) -> NSRect {
-        guard imageSize.width > 0, imageSize.height > 0 else { return rect }
-        let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
-        let size = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
-        return NSRect(
-            x: rect.midX - size.width / 2,
-            y: rect.midY - size.height / 2,
-            width: size.width,
-            height: size.height
+    private func scheduleCursorHide() {
+        cursorHideWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard self?.isFullScreen == true, self?.cursorIsHidden == false else { return }
+            self?.cursorIsHidden = true
+            NSCursor.hide()
+        }
+        cursorHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: item)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = mouseTrackingArea {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
         )
+        addTrackingArea(area)
+        mouseTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard isFullScreen else { return }
+        if cursorIsHidden {
+            cursorIsHidden = false
+            NSCursor.unhide()
+        }
+        scheduleCursorHide()
     }
 
     // MARK: - Keyboard
@@ -114,7 +161,13 @@ final class ImageView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func keyDown(with event: NSEvent) {
-        let shift = event.modifierFlags.contains(.shift)
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let shift = flags.contains(.shift)
+        // Bare keys only; ⌘ shortcuts are handled by the menu.
+        guard flags.isSubset(of: [.shift]) else {
+            super.keyDown(with: event)
+            return
+        }
         switch event.keyCode {
         case 123: // Left arrow
             actionDelegate?.imageViewDidRequestPrevious(self)
@@ -130,6 +183,10 @@ final class ImageView: NSView {
             } else {
                 actionDelegate?.imageViewDidRequestNext(self)
             }
+        case 3 where event.charactersIgnoringModifiers == "f" && !shift: // F
+            actionDelegate?.imageViewDidRequestToggleFullScreen(self)
+        case 53: // Escape
+            actionDelegate?.imageViewDidRequestExitFullScreen(self)
         default:
             super.keyDown(with: event)
         }

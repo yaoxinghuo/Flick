@@ -15,6 +15,15 @@ final class MainWindowController: NSWindowController {
     /// selection of files (multi-file drag / open-panel multi-select).
     private var currentFolder: URL?
     private var loadTask: ImageLoadTask?
+    /// Quarter-turns clockwise applied to the displayed image (view-only).
+    private var rotation = 0
+    /// Decoded image before rotation; needed to re-render on rotate.
+    private var baseImage: CGImage?
+    private var backgroundStyle = BackgroundStyle.load() {
+        didSet { backgroundStyle.save() }
+    }
+    private var keepRotationOnChange =
+        UserDefaults.standard.bool(forKey: "keepRotationOnChange")
 
     init() {
         let window = NSWindow(
@@ -28,8 +37,10 @@ final class MainWindowController: NSWindowController {
         window.center()
         super.init(window: window)
 
+        window.delegate = self
         window.contentView = imageView
         imageView.actionDelegate = self
+        imageView.setBackgroundColor(backgroundStyle.color)
         window.makeFirstResponder(imageView)
         imageView.setMessage("打开图片或文件夹开始浏览（⌘O），或将图片拖入窗口")
     }
@@ -122,12 +133,17 @@ final class MainWindowController: NSWindowController {
             return
         }
 
+        if !keepRotationOnChange {
+            rotation = 0
+        }
+
         window?.title = "\(file.fileName) — \(navigator.index + 1) / \(files.count)"
         window?.representedURL = file.url
         prefetchNeighbors()
 
         if let cached = store.cachedImage(for: file.url) {
-            imageView.setImage(cached)
+            baseImage = cached
+            imageView.setImage(displayImage(from: cached))
             return
         }
 
@@ -138,11 +154,17 @@ final class MainWindowController: NSWindowController {
             guard let self, self.currentFile?.url == url else { return }
             switch result {
             case .success(let image):
-                self.imageView.setImage(image)
+                self.baseImage = image
+                self.imageView.setImage(self.displayImage(from: image))
             case .failure(let error):
+                self.baseImage = nil
                 self.imageView.setMessage(error.message)
             }
         }
+    }
+
+    private func displayImage(from base: CGImage) -> CGImage {
+        ImageRotator.rotate(base, quarterTurns: rotation)
     }
 
     /// Keeps the immediate neighbours warm so stepping feels instant.
@@ -180,6 +202,39 @@ final class MainWindowController: NSWindowController {
     @objc func nextImage(_ sender: Any?) { goNext() }
     @objc func firstImage(_ sender: Any?) { goFirst() }
     @objc func lastImage(_ sender: Any?) { goLast() }
+
+    // MARK: Zoom / rotate / fullscreen / background
+
+    @objc func zoomIn(_ sender: Any?) { imageView.scrollView.zoomIn() }
+    @objc func zoomOut(_ sender: Any?) { imageView.scrollView.zoomOut() }
+    @objc func zoomToFit(_ sender: Any?) { imageView.scrollView.zoomToFit() }
+    @objc func zoomToActualSize(_ sender: Any?) { imageView.scrollView.zoomToActual() }
+    @objc func zoomToFill(_ sender: Any?) { imageView.scrollView.zoomToFill() }
+
+    @objc func rotateRight(_ sender: Any?) { rotate(by: 1) }
+    @objc func rotateLeft(_ sender: Any?) { rotate(by: -1) }
+
+    private func rotate(by quarterTurns: Int) {
+        guard let base = baseImage else { return }
+        rotation = (rotation + quarterTurns + 4) % 4
+        imageView.updateImage(displayImage(from: base))
+    }
+
+    @objc func toggleKeepRotation(_ sender: NSMenuItem) {
+        keepRotationOnChange.toggle()
+        UserDefaults.standard.set(keepRotationOnChange, forKey: "keepRotationOnChange")
+    }
+
+    @objc func toggleFullScreen(_ sender: Any?) {
+        window?.toggleFullScreen(nil)
+    }
+
+    @objc func setBackground(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let style = BackgroundStyle(rawValue: raw) else { return }
+        backgroundStyle = style
+        imageView.setBackgroundColor(style.color)
+    }
 
     @objc func setSortKey(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
@@ -242,6 +297,21 @@ final class MainWindowController: NSWindowController {
             return true
         case #selector(revealInFinder(_:)), #selector(copyImage(_:)), #selector(copyFilePath(_:)):
             return currentFile != nil
+        case #selector(zoomIn(_:)), #selector(zoomOut(_:)),
+             #selector(zoomToFit(_:)), #selector(zoomToActualSize(_:)),
+             #selector(zoomToFill(_:)),
+             #selector(rotateRight(_:)), #selector(rotateLeft(_:)):
+            return baseImage != nil
+        case #selector(toggleKeepRotation(_:)):
+            menuItem.state = keepRotationOnChange ? .on : .off
+            return true
+        case #selector(setBackground(_:)):
+            menuItem.state = (menuItem.representedObject as? String) == backgroundStyle.rawValue ? .on : .off
+            return true
+        case #selector(toggleFullScreen(_:)):
+            let fullScreen = window?.styleMask.contains(.fullScreen) == true
+            menuItem.title = fullScreen ? "退出全屏" : "进入全屏"
+            return true
         default:
             return true
         }
@@ -271,7 +341,28 @@ extension MainWindowController: ImageViewActionDelegate {
     func imageViewDidRequestPrevious(_ view: ImageView) { goPrevious() }
     func imageViewDidRequestFirst(_ view: ImageView) { goFirst() }
     func imageViewDidRequestLast(_ view: ImageView) { goLast() }
+
+    func imageViewDidRequestToggleFullScreen(_ view: ImageView) {
+        window?.toggleFullScreen(nil)
+    }
+
+    func imageViewDidRequestExitFullScreen(_ view: ImageView) {
+        if window?.styleMask.contains(.fullScreen) == true {
+            window?.toggleFullScreen(nil)
+        }
+    }
+
     func imageView(_ view: ImageView, didReceiveDroppedURLs urls: [URL]) {
         open(urls: urls)
+    }
+}
+
+extension MainWindowController: NSWindowDelegate {
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        imageView.setFullScreen(true)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        imageView.setFullScreen(false)
     }
 }

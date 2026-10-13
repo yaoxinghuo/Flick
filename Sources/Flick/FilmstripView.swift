@@ -196,6 +196,13 @@ final class FilmstripView: NSView {
         let layout = NSCollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
         layout.itemSize = Self.itemSize
+        // For a horizontal flow layout the gap BETWEEN columns is
+        // minimumLineSpacing (defaults to 10!), while minimumInteritemSpacing
+        // is the vertical gap within a column. Leaving lineSpacing at the
+        // default made the real cell pitch 66pt while contentWidth assumed
+        // 60 — the last thumbnails were clipped AND unreachable, since
+        // maxOffset computed from the wrong width pinned scrolling at 0.
+        layout.minimumLineSpacing = Self.spacing
         layout.minimumInteritemSpacing = Self.spacing
         // Horizontal insets exceed the panel's 10pt corner radius so the
         // first/last cells are never clipped by the rounded ends.

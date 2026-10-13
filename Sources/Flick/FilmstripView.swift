@@ -160,7 +160,9 @@ final class FilmstripView: NSView {
         layout.scrollDirection = .horizontal
         layout.itemSize = Self.itemSize
         layout.minimumInteritemSpacing = Self.spacing
-        layout.sectionInset = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
+        // Horizontal insets exceed the panel's 10pt corner radius so the
+        // first/last cells are never clipped by the rounded ends.
+        layout.sectionInset = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
 
         collectionView.collectionViewLayout = layout
         collectionView.backgroundColors = [.clear]
@@ -180,10 +182,10 @@ final class FilmstripView: NSView {
         scrollOffset += 0
     }
 
-    /// Full laid-out width of all cells (sectionInset 6 + N*(56+4) - 4).
+    /// Full laid-out width of all cells (sectionInset 12 + N*(56+4) - 4).
     var contentWidth: CGFloat {
         let cell = Self.itemSize.width + Self.spacing
-        return max(0, CGFloat(urls.count) * cell - Self.spacing + 12)
+        return max(0, CGFloat(urls.count) * cell - Self.spacing + 24)
     }
 
     private var maxOffset: CGFloat {

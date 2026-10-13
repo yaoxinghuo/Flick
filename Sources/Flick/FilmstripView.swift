@@ -113,6 +113,11 @@ final class FilmstripView: NSView {
     static let height: CGFloat = 68
     private static let itemSize = NSSize(width: 56, height: 56)
     private static let spacing: CGFloat = 4
+    /// Pitch between adjacent cells (56pt cell + 4pt gap).
+    static let cellStride: CGFloat = 60
+    /// Total horizontal padding around the cell run (12pt section inset each
+    /// side, minus the trailing 4pt gap the last cell doesn't need).
+    static let horizontalInsets: CGFloat = 20
 
     /// NSCollectionView consumes scrollWheel itself (trying to scroll an
     /// enclosing NSScrollView that doesn't exist), so the strip's own
@@ -145,7 +150,39 @@ final class FilmstripView: NSView {
             // One nested didSet when clamped differs; the second pass sees
             // equal values and just re-sets the frame — no recursion loop.
             if clamped != scrollOffset { scrollOffset = clamped }
+            updateEdgeFades()
         }
+    }
+
+    /// Edge-fade mask: since the panel width snaps to whole cells (no
+    /// half-cut thumbnail hints at overflow), a soft fade on the left/right
+    /// edge is the only cue that more content exists in that direction.
+    private let fadeMask = CAGradientLayer()
+
+    private func updateEdgeFades() {
+        let fade: CGFloat = 28
+        let left = scrollOffset > 0
+        let right = scrollOffset < maxOffset - 1
+        guard left || right else {
+            layer?.mask = nil
+            return
+        }
+        fadeMask.frame = bounds
+        fadeMask.startPoint = CGPoint(x: 0, y: 0.5)
+        fadeMask.endPoint = CGPoint(x: 1, y: 0.5)
+        fadeMask.colors = [
+            (left ? NSColor.clear : .white).cgColor,
+            NSColor.white.cgColor,
+            NSColor.white.cgColor,
+            (right ? NSColor.clear : .white).cgColor
+        ]
+        fadeMask.locations = [
+            0,
+            NSNumber(value: Double(left ? fade / bounds.width : 0)),
+            NSNumber(value: Double(1 - (right ? fade / bounds.width : 0))),
+            1
+        ]
+        if layer?.mask !== fadeMask { layer?.mask = fadeMask }
     }
 
     override init(frame frameRect: NSRect) {
@@ -180,12 +217,13 @@ final class FilmstripView: NSView {
         super.layout()
         // Re-run the didSet clamp so a resized strip repositions its content.
         scrollOffset += 0
+        updateEdgeFades()
     }
 
-    /// Full laid-out width of all cells (sectionInset 12 + N*(56+4) - 4).
+    /// Full laid-out width of all cells — always lands on a cell boundary
+    /// (`60N + 20`), so an uncapped panel never half-cuts a thumbnail.
     var contentWidth: CGFloat {
-        let cell = Self.itemSize.width + Self.spacing
-        return max(0, CGFloat(urls.count) * cell - Self.spacing + 24)
+        max(0, CGFloat(urls.count) * Self.cellStride + Self.horizontalInsets)
     }
 
     private var maxOffset: CGFloat {

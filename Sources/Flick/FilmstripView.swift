@@ -107,12 +107,21 @@ final class FilmstripView: NSView {
     private static let itemSize = NSSize(width: 56, height: 56)
     private static let spacing: CGFloat = 4
 
+    /// NSCollectionView consumes scrollWheel itself (trying to scroll an
+    /// enclosing NSScrollView that doesn't exist), so the strip's own
+    /// scrollWheel override never runs. Forward the event up the chain.
+    private final class PassthroughCollectionView: NSCollectionView {
+        override func scrollWheel(with event: NSEvent) {
+            nextResponder?.scrollWheel(with: event)
+        }
+    }
+
     var onSelect: ((Int) -> Void)?
 
     private lazy var thumbnailStore = ThumbnailStore(
         maxPixelSize: Int(64 * (NSScreen.main?.backingScaleFactor ?? 2))
     )
-    private let collectionView = NSCollectionView()
+    private let collectionView = PassthroughCollectionView()
     private var urls: [URL] = []
     private var currentIndex = -1
     private var suppressSelectCallback = false

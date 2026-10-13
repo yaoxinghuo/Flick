@@ -13,7 +13,7 @@ A minimal, read-only image viewer for macOS — a lightweight Pixea-style altern
 - Floating filmstrip (T): a panel pinned to the bottom of the screen — it never shifts when the window resizes, so consecutive thumbnails stay under the cursor
 - Animated images: GIF / APNG / animated WebP play on a GPU layer (P to pause), rotate while playing
 - Info panel (⌘I): floating translucent inspector with file + image + EXIF/TIFF/GPS fields, missing data simply hidden
-- Context menu: Open With, Show in Finder, Copy, Print… (⌘P), Set as Desktop Picture
+- Context menu: Open With, Show in Finder, Copy, Print… (⌘P), Set as Desktop Picture, Move to Trash (⌘⌫)
 - Large images: >4096 px sources decode downsampled first, full resolution swapped in when you zoom past the tier
 - Trackpad: two-finger swipe to flip pages (rubber-bands at the bounds), pinch to zoom anchored at the cursor
 - Window follows the image's size and aspect ratio (clamped to the screen), centers on change
@@ -83,7 +83,7 @@ CI: the workflow runs on `v*` tags (or manual dispatch) — build, test, package
 - **Layers**: `FlickCore` (pure logic — folder scanning & sorting, navigation state, decode/downsampling, thumbnail store, swipe state machine, metadata reader) is unit-tested with swift-testing; `Flick` is the AppKit shell.
 - **Decode**: `CGImageSource` tiered decoding — display tier ≤4096 px, full-resolution fetch on demand when zoom exceeds the tier; `realSize` always reflects the source so 100% means true pixels.
 - **Animation**: frames decode once into a `CAKeyframeAnimation` on the image layer — rotation/zoom never re-decodes.
-- **Filmstrip**: a child `NSPanel` docked to the screen's bottom edge — independent of the image window, so window resizes never move the thumbnails. Inside it, a horizontal `NSCollectionView` is panned manually (no `NSScrollView`, hence no scrollbars); the highlight ring is data-driven so cell reuse can't leave stale rings.
+- **Filmstrip**: a child `NSPanel` docked to the screen's bottom edge — independent of the image window, so window resizes never move the thumbnails. Inside it, a horizontal `NSCollectionView` is panned manually (no `NSScrollView`, hence no scrollbars) and capped at 60% of the screen width; the highlight ring is data-driven so cell reuse can't leave stale rings.
 - **Localization**: strings live in code via `L10n.s(en, zh)` — no `.lproj` bundles since there's no Xcode resource step.
 
 ## Known Limitations

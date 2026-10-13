@@ -35,8 +35,10 @@ final class FilmstripPanel: NSPanel {
         contentView?.addSubview(strip)
     }
 
-    /// Pill width hugs the content but caps near the screen edge.
+    /// Pill width hugs the content but caps at 60% of the screen — wider
+    /// reads as a bar, not a panel, and buries the current item's context.
+    /// Overflow scrolls horizontally inside the strip.
     func idealWidth(for screen: NSScreen) -> CGFloat {
-        min(max(strip.contentWidth, 240), screen.visibleFrame.width * 0.94)
+        min(max(strip.contentWidth, 240), screen.visibleFrame.width * 0.6)
     }
 }

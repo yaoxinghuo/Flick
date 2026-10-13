@@ -573,6 +573,9 @@ final class MainWindowController: NSWindowController {
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(
             L10n.s("Set as Desktop Picture", "设定为桌面图片"), #selector(setDesktopPicture(_:))))
+        menu.addItem(.separator())
+        menu.addItem(makeMenuItem(
+            L10n.s("Move to Trash", "移到废纸篓"), #selector(moveToTrash(_:))))
         menu.addItem(makeMenuItem(
             infoPanelVisible
                 ? L10n.s("Hide Info Panel", "隐藏信息面板")
@@ -648,6 +651,36 @@ final class MainWindowController: NSWindowController {
         operation.showsPrintPanel = true
         guard let window else { return }
         operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// Trashes the current file and lands on whatever now occupies its slot
+    /// (the next image, or the previous when it was last). Empties out to
+    /// the placeholder when it was the only file.
+    @objc func moveToTrash(_ sender: Any?) {
+        guard let file = currentFile else { return }
+        do {
+            try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = L10n.s("Couldn't Move to Trash", "无法移到废纸篓")
+            alert.informativeText = error.localizedDescription
+            if let window {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
+            return
+        }
+        files.removeAll { $0 == file }
+        filmstripPanel.strip.setFiles(files.map(\.url))
+        navigator.update(count: files.count)
+        if files.isEmpty {
+            showPlaceholder(L10n.s(
+                "Open an image or folder to start (⌘O) — double-click or drop files here",
+                "打开图片或文件夹开始浏览（⌘O），双击空白处或拖入图片"))
+        } else {
+            showCurrent()
+        }
     }
 
     @objc func setDesktopPicture(_ sender: Any?) {
@@ -783,7 +816,8 @@ final class MainWindowController: NSWindowController {
             menuItem.state = (menuItem.representedObject as? Bool) == sortOrder.ascending ? .on : .off
             return true
         case #selector(revealInFinder(_:)), #selector(copyImage(_:)), #selector(copyFilePath(_:)),
-             #selector(printImage(_:)), #selector(setDesktopPicture(_:)):
+             #selector(printImage(_:)), #selector(setDesktopPicture(_:)),
+             #selector(moveToTrash(_:)):
             return currentFile != nil
         case #selector(zoomIn(_:)), #selector(zoomOut(_:)),
              #selector(zoomToFit(_:)), #selector(zoomToActualSize(_:)),

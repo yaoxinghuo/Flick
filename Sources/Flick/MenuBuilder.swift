@@ -38,6 +38,8 @@ enum MenuBuilder {
         menu.addItem(make(L10n.s("Copy File Path", "拷贝文件路径"), #selector(MainWindowController.copyFilePath(_:)), "c", [.command, .option]))
         menu.addItem(.separator())
         menu.addItem(make(L10n.s("Print…", "打印…"), #selector(MainWindowController.printImage(_:)), "p"))
+        // ⌘⌫ — the delete key produces NSDeleteCharacter (0x7F), same as Finder.
+        menu.addItem(make(L10n.s("Move to Trash", "移到废纸篓"), #selector(MainWindowController.moveToTrash(_:)), "\u{7f}"))
         menu.addItem(.separator())
         menu.addItem(make(L10n.s("Close Window", "关闭窗口"), #selector(NSWindow.performClose(_:)), "w"))
         return item

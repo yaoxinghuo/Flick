@@ -12,6 +12,9 @@ private final class ThumbnailCellView: NSView {
     /// collection view's own `selectionIndexPaths` desyncs from our index
     /// (a stale "already selected" cell produces no delegate callback).
     var onTap: (() -> Void)?
+    /// Belt-and-suspenders scroll forwarding: the strip (not a cell) owns
+    /// panning, so any wheel event landing on a cell climbs straight to it.
+    var onScroll: ((NSEvent) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -26,6 +29,10 @@ private final class ThumbnailCellView: NSView {
         addSubview(thumbView)
         let tap = NSClickGestureRecognizer(target: self, action: #selector(tapped))
         addGestureRecognizer(tap)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onScroll?(event)
     }
 
     @objc private func tapped() {
@@ -188,6 +195,12 @@ final class FilmstripView: NSView {
     /// notch maps to one full cell — otherwise each tick moves a few points
     /// and the strip feels frozen.
     override func scrollWheel(with event: NSEvent) {
+        pan(with: event)
+    }
+
+    /// Shared pan handler so cells, the collection view, and the strip itself
+    /// all feed the same path regardless of which view the event lands on.
+    private func pan(with event: NSEvent) {
         let dx: CGFloat, dy: CGFloat
         if event.hasPreciseScrollingDeltas {
             dx = event.scrollingDeltaX
@@ -275,6 +288,9 @@ extension FilmstripView: NSCollectionViewDataSource, NSCollectionViewDelegate {
         let url = urls[indexPath.item]
         (item.view as? ThumbnailCellView)?.onTap = { [weak self] in
             self?.onSelect?(indexPath.item)
+        }
+        (item.view as? ThumbnailCellView)?.onScroll = { [weak self] event in
+            self?.pan(with: event)
         }
         (item as? ThumbnailItem)?.configure(
             url: url,

@@ -5,6 +5,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# gh release create needs write access; new repos default GITHUB_TOKEN
+# to read-only, which fails with "Resource not accessible by integration".
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15

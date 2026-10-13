@@ -40,4 +40,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" Flick.zip --title "Flick ${GITHUB_REF_NAME}" --generate-notes
+        run: |
+          # Idempotent: re-running a tag's workflow refreshes the asset
+          # instead of failing on "release already exists".
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" Flick.zip --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" Flick.zip --title "Flick ${GITHUB_REF_NAME}" --generate-notes
+          fi

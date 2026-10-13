@@ -4,10 +4,8 @@ English | [中文](README-zh.md)
 
 A minimal, read-only image viewer for macOS — a lightweight Pixea-style alternative for people who just want to *look* at pictures. No editing, no annotations, no filters, no deleting.
 
-<!-- TODO: screenshot
+<img width="2434" height="1428" alt="image" src="https://github.com/user-attachments/assets/bb218704-3942-4e86-be9c-9b84e4d590cc" />
 
-<img width="700" alt="Flick" src="..." />
--->
 
 - Immersive browsing: the window hugs the image, chrome (toolbar capsule, bottom controls, status strip) only appears while the pointer is over the edges
 - Floating filmstrip (T): a panel pinned to the bottom of the screen — it never shifts when the window resizes, so consecutive thumbnails stay under the cursor; width snaps to whole cells and edges fade when more content scrolls

@@ -8,6 +8,10 @@ import FlickCore
 /// garbage origins under the collection view's internal layout passes.
 private final class ThumbnailCellView: NSView {
     let thumbView = NSImageView()
+    /// Direct click path — `didSelectItemsAt` alone can go silent when the
+    /// collection view's own `selectionIndexPaths` desyncs from our index
+    /// (a stale "already selected" cell produces no delegate callback).
+    var onTap: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -20,6 +24,12 @@ private final class ThumbnailCellView: NSView {
         thumbView.imageScaling = .scaleProportionallyUpOrDown
         thumbView.imageAlignment = .alignCenter
         addSubview(thumbView)
+        let tap = NSClickGestureRecognizer(target: self, action: #selector(tapped))
+        addGestureRecognizer(tap)
+    }
+
+    @objc private func tapped() {
+        onTap?()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -208,6 +218,9 @@ final class FilmstripView: NSView {
         }
         let path = IndexPath(item: index, section: 0)
         suppressSelectCallback = true
+        // Drop any stale selection first: a lingering "already selected"
+        // index makes that cell's clicks produce no didSelectItemsAt.
+        collectionView.deselectAll(nil)
         collectionView.selectItems(at: [path], scrollPosition: [])
         suppressSelectCallback = false
         // Defer one run loop: layout attributes for offscreen items are only
@@ -242,6 +255,9 @@ extension FilmstripView: NSCollectionViewDataSource, NSCollectionViewDelegate {
             withIdentifier: ThumbnailItem.identifier, for: indexPath
         )
         let url = urls[indexPath.item]
+        (item.view as? ThumbnailCellView)?.onTap = { [weak self] in
+            self?.onSelect?(indexPath.item)
+        }
         (item as? ThumbnailItem)?.configure(
             url: url,
             isCurrent: indexPath.item == currentIndex,

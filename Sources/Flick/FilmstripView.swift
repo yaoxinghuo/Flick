@@ -183,12 +183,21 @@ final class FilmstripView: NSView {
         max(0, contentWidth - bounds.width)
     }
 
-    /// Pans the strip. Trackpads report deltaX; wheel mice report deltaY —
-    /// either axis scrolls, whichever is stronger.
+    /// Pans the strip. Trackpads/Magic Mouse report pixel deltas via
+    /// scrollingDelta*; wheel mice report line-unit deltas via delta*, so a
+    /// notch maps to one full cell — otherwise each tick moves a few points
+    /// and the strip feels frozen.
     override func scrollWheel(with event: NSEvent) {
-        let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
-            ? event.scrollingDeltaX
-            : event.scrollingDeltaY
+        let dx: CGFloat, dy: CGFloat
+        if event.hasPreciseScrollingDeltas {
+            dx = event.scrollingDeltaX
+            dy = event.scrollingDeltaY
+        } else {
+            let step = Self.itemSize.width + Self.spacing
+            dx = event.deltaX * step
+            dy = event.deltaY * step
+        }
+        let delta = abs(dx) >= abs(dy) ? dx : dy
         scrollOffset -= delta
     }
 

@@ -561,26 +561,28 @@ final class MainWindowController: NSWindowController {
         openWithItem.submenu = buildOpenWithMenu(for: file.url)
         menu.addItem(openWithItem)
 
+        // Shortcut hints mirror the main-menu equivalents — they're display
+        // only here; the actual key handling lives in the menu bar items.
         menu.addItem(makeMenuItem(
-            L10n.s("Show in Finder", "在访达中显示"), #selector(revealInFinder(_:))))
+            L10n.s("Show in Finder", "在访达中显示"), #selector(revealInFinder(_:)), "r", [.command, .option]))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(
-            L10n.s("Copy", "拷贝"), #selector(copyImage(_:))))
+            L10n.s("Copy", "拷贝"), #selector(copyImage(_:)), "c", .command))
         menu.addItem(makeMenuItem(
-            L10n.s("Copy Path", "拷贝路径"), #selector(copyFilePath(_:))))
+            L10n.s("Copy Path", "拷贝路径"), #selector(copyFilePath(_:)), "c", [.command, .option]))
         menu.addItem(makeMenuItem(
-            L10n.s("Print…", "打印…"), #selector(printImage(_:))))
+            L10n.s("Print…", "打印…"), #selector(printImage(_:)), "p", .command))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(
             L10n.s("Set as Desktop Picture", "设定为桌面图片"), #selector(setDesktopPicture(_:))))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(
-            L10n.s("Move to Trash", "移到废纸篓"), #selector(moveToTrash(_:))))
+            L10n.s("Move to Trash", "移到废纸篓"), #selector(moveToTrash(_:)), "\u{7f}", .command))
         menu.addItem(makeMenuItem(
             infoPanelVisible
                 ? L10n.s("Hide Info Panel", "隐藏信息面板")
                 : L10n.s("Show Info Panel", "显示信息面板"),
-            #selector(toggleInfoPanel(_:))))
+            #selector(toggleInfoPanel(_:)), "i", .command))
         return menu
     }
 

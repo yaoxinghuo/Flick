@@ -1,5 +1,6 @@
 import AppKit
 import FlickCore
+import UniformTypeIdentifiers
 
 /// Owns the single browser window: resolves what to show (folder vs. ad-hoc
 /// list), drives `ImageNavigator`, loads images through `ImageStore` and keeps
@@ -35,12 +36,15 @@ final class MainWindowController: NSWindowController {
     private var infoPanelPinned = false
     /// Guards against treating programmatic setFrame as a user drag.
     private var positioningInfoPanel = false
-    /// Filmstrip defaults to off: hovering the bottom edge reveals it
-    /// transiently, the toggle pins it on.
+    /// Filmstrip defaults to off to save thumbnail decode work; the toggle
+    /// shows/hides the floating bottom panel.
     private var filmstripEnabled: Bool = {
         let defaults = UserDefaults.standard
         return defaults.object(forKey: "filmstripEnabled") as? Bool ?? false
     }()
+    /// Screen-bottom filmstrip window; created eagerly (cheap) but only
+    /// ordered on screen while enabled and images are loaded.
+    private let filmstripPanel = FilmstripPanel()
     private var backgroundStyle = BackgroundStyle.load() {
         didSet { backgroundStyle.save() }
     }
@@ -78,8 +82,9 @@ final class MainWindowController: NSWindowController {
         imageView.onZoomChanged = { [weak self] in
             self?.considerHighResLoad()
         }
-        imageView.setFilmstripEnabled(filmstripEnabled)
-        imageView.onFilmstripSelect = { [weak self] index in
+        imageView.setFilmstripHighlighted(filmstripEnabled)
+        imageView.contextMenuProvider = { [weak self] in self?.buildContextMenu() }
+        filmstripPanel.strip.onSelect = { [weak self] index in
             self?.goTo(index)
         }
         imageView.onOpen = { [weak self] in self?.openDocument(nil) }
@@ -131,7 +136,7 @@ final class MainWindowController: NSWindowController {
         }
         files = ImageFileScanner.sorted(scanned, by: sortOrder)
         currentFolder = folder
-        imageView.setFilmstripFiles(files.map(\.url))
+        filmstripPanel.strip.setFiles(files.map(\.url))
         let target = file?.standardizedFileURL
         let index = target.flatMap { t in
             files.firstIndex { $0.url.standardizedFileURL == t }
@@ -149,7 +154,7 @@ final class MainWindowController: NSWindowController {
         }
         files = ImageFileScanner.sorted(images, by: sortOrder)
         currentFolder = nil
-        imageView.setFilmstripFiles(files.map(\.url))
+        filmstripPanel.strip.setFiles(files.map(\.url))
         navigator.reset(count: files.count, index: 0)
         navigator.wrapsAround = wrapAround
         showCurrent()
@@ -167,10 +172,11 @@ final class MainWindowController: NSWindowController {
         updateMetadataViews(nil)
         imageView.setTitleInfo(folder: "", file: "")
         imageView.setStatusIndex(-1, total: 0)
-        imageView.setFilmstripFiles([])
+        filmstripPanel.strip.setFiles([])
         window?.title = Flick.appName
         window?.representedURL = nil
         syncInfoPanel()
+        syncFilmstrip()
     }
 
     // MARK: - Current image
@@ -221,7 +227,8 @@ final class MainWindowController: NSWindowController {
         prefetchNeighbors()
         loadMetadata()
         syncInfoPanel()
-        imageView.setFilmstripIndex(navigator.index)
+        filmstripPanel.strip.setCurrentIndex(navigator.index)
+        syncFilmstrip()
 
         if let cached = store.cachedImage(for: file.url, maxPixelSize: Self.displayCap) {
             present(loaded: cached)
@@ -259,6 +266,7 @@ final class MainWindowController: NSWindowController {
             )
             fitWindowToImage()
             syncInfoPanel()
+            syncFilmstrip()
         } else if let still = loaded.still {
             isAnimatedContent = false
             baseImage = still
@@ -269,6 +277,7 @@ final class MainWindowController: NSWindowController {
             )
             fitWindowToImage()
             syncInfoPanel()
+            syncFilmstrip()
             considerHighResLoad()
         }
     }
@@ -498,7 +507,163 @@ final class MainWindowController: NSWindowController {
     @objc func toggleFilmstrip(_ sender: Any?) {
         filmstripEnabled.toggle()
         UserDefaults.standard.set(filmstripEnabled, forKey: "filmstripEnabled")
-        imageView.setFilmstripEnabled(filmstripEnabled)
+        imageView.setFilmstripHighlighted(filmstripEnabled)
+        syncFilmstrip()
+    }
+
+    // MARK: - Floating filmstrip panel
+
+    /// Pixea-style: the strip is pinned to the bottom of the screen holding
+    /// the main window, so it never jumps when the window resizes between
+    /// images — consecutive thumbnails stay under the pointer.
+    private func syncFilmstrip() {
+        let panel = filmstripPanel
+        let show = filmstripEnabled && files.count > 1
+            && !imageView.showsPlaceholder && window != nil
+        if show, let window {
+            if panel.parent !== window {
+                panel.parent?.removeChildWindow(panel)
+                window.addChildWindow(panel, ordered: .above)
+            }
+            panel.strip.ensureLoaded()
+            positionFilmstrip()
+            panel.orderFront(nil)
+        } else {
+            panel.parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
+        }
+    }
+
+    private func positionFilmstrip() {
+        guard let screen = window?.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let width = filmstripPanel.idealWidth(for: screen)
+        let target = NSRect(
+            x: visible.midX - width / 2,
+            y: visible.minY + FilmstripPanel.margin,
+            width: width,
+            height: FilmstripPanel.height
+        )
+        guard filmstripPanel.frame != target else { return }
+        filmstripPanel.setFrame(target, display: true)
+    }
+
+    // MARK: - Context menu & file actions
+
+    /// Built fresh on every right-click so the Open With list always matches
+    /// the current file. Nil when nothing is loaded.
+    func buildContextMenu() -> NSMenu? {
+        guard let file = currentFile else { return nil }
+        let menu = NSMenu()
+
+        let openWithItem = NSMenuItem(
+            title: L10n.s("Open With", "打开方式"), action: nil, keyEquivalent: "")
+        openWithItem.submenu = buildOpenWithMenu(for: file.url)
+        menu.addItem(openWithItem)
+
+        menu.addItem(makeMenuItem(
+            L10n.s("Show in Finder", "在访达中显示"), #selector(revealInFinder(_:))))
+        menu.addItem(.separator())
+        menu.addItem(makeMenuItem(
+            L10n.s("Copy", "拷贝"), #selector(copyImage(_:))))
+        menu.addItem(makeMenuItem(
+            L10n.s("Copy Path", "拷贝路径"), #selector(copyFilePath(_:))))
+        menu.addItem(makeMenuItem(
+            L10n.s("Print…", "打印…"), #selector(printImage(_:))))
+        menu.addItem(.separator())
+        menu.addItem(makeMenuItem(
+            L10n.s("Set as Desktop Picture", "设定为桌面图片"), #selector(setDesktopPicture(_:))))
+        menu.addItem(makeMenuItem(
+            infoPanelVisible
+                ? L10n.s("Hide Info Panel", "隐藏信息面板")
+                : L10n.s("Show Info Panel", "显示信息面板"),
+            #selector(toggleInfoPanel(_:))))
+        return menu
+    }
+
+    private func makeMenuItem(
+        _ title: String, _ action: Selector,
+        _ key: String = "", _ modifiers: NSEvent.ModifierFlags = []
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        item.keyEquivalentModifierMask = modifiers
+        return item
+    }
+
+    private func buildOpenWithMenu(for url: URL) -> NSMenu {
+        let menu = NSMenu()
+        // System order puts the default handler first.
+        let apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
+        for appURL in apps.prefix(12) {
+            let name = appURL.deletingPathExtension().lastPathComponent
+            let item = NSMenuItem(
+                title: name, action: #selector(openWithApp(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = appURL
+            let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+            menu.addItem(item)
+        }
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(makeMenuItem(
+            L10n.s("Other…", "其他…"), #selector(openWithOther(_:))))
+        return menu
+    }
+
+    @objc func openWithApp(_ sender: NSMenuItem) {
+        guard let appURL = sender.representedObject as? URL,
+              let file = currentFile else { return }
+        NSWorkspace.shared.open(
+            [file.url], withApplicationAt: appURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
+
+    @objc func openWithOther(_ sender: Any?) {
+        guard let file = currentFile else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.applicationBundle]
+        guard panel.runModal() == .OK, let appURL = panel.url else { return }
+        NSWorkspace.shared.open(
+            [file.url], withApplicationAt: appURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
+
+    @objc func printImage(_ sender: Any?) {
+        guard let file = currentFile,
+              let image = NSImage(contentsOf: file.url) else { return }
+        let printView = NSImageView(frame: NSRect(origin: .zero, size: image.size))
+        printView.image = image
+        printView.imageScaling = .scaleProportionallyUpOrDown
+        let operation = NSPrintOperation(view: printView)
+        operation.printInfo.horizontalPagination = .fit
+        operation.printInfo.verticalPagination = .fit
+        operation.showsPrintPanel = true
+        guard let window else { return }
+        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    @objc func setDesktopPicture(_ sender: Any?) {
+        guard let file = currentFile,
+              let screen = window?.screen ?? NSScreen.main else { return }
+        do {
+            // Deprecated since macOS 14 but still the only public wallpaper
+            // API; there's no replacement short of private WallpaperKit calls.
+            try NSWorkspace.shared.setDesktopImageURL(
+                file.url, for: screen, options: [:])
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = L10n.s("Couldn't Set Desktop Picture", "无法设定桌面图片")
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     /// Metadata feeds both the info panel and the status strip, so it loads
@@ -587,6 +752,7 @@ final class MainWindowController: NSWindowController {
         Zoom: ⌘+ / ⌘-, ⌘0 fit, ⌘1 actual size, ⌘2 fill, pinch, double-click
         Rotate: ⌘R clockwise, ⇧⌘R counter-clockwise; Full screen: F or ⌃⌘F
         Animation: P pause / resume; Info panel: ⌘I; Filmstrip: T
+        Right-click: Open With, Show in Finder, Copy, Print…, Set as Desktop Picture
         Sorting: View menu > Sort By
         Opening a single image browses every image in its folder.
         """, """
@@ -595,6 +761,7 @@ final class MainWindowController: NSWindowController {
         缩放：⌘+ / ⌘-、⌘0 适应、⌘1 实际大小、⌘2 填满、捏合、双击
         旋转：⌘R 顺时针、⇧⌘R 逆时针；全屏：F 或 ⌃⌘F
         动图：P 暂停 / 继续；信息面板：⌘I；缩略图条：T
+        右键：打开方式、在访达中显示、拷贝、打印、设定为桌面图片
         排序：显示菜单 > 排序方式
         打开单张图片时自动浏览其所在文件夹的所有图片。
         """)
@@ -615,7 +782,8 @@ final class MainWindowController: NSWindowController {
         case #selector(setSortAscending(_:)):
             menuItem.state = (menuItem.representedObject as? Bool) == sortOrder.ascending ? .on : .off
             return true
-        case #selector(revealInFinder(_:)), #selector(copyImage(_:)), #selector(copyFilePath(_:)):
+        case #selector(revealInFinder(_:)), #selector(copyImage(_:)), #selector(copyFilePath(_:)),
+             #selector(printImage(_:)), #selector(setDesktopPicture(_:)):
             return currentFile != nil
         case #selector(zoomIn(_:)), #selector(zoomOut(_:)),
              #selector(zoomToFit(_:)), #selector(zoomToActualSize(_:)),
@@ -729,11 +897,13 @@ extension MainWindowController: NSWindowDelegate {
     func windowDidEnterFullScreen(_ notification: Notification) {
         imageView.setFullScreen(true)
         positionInfoPanel()
+        positionFilmstrip()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
         imageView.setFullScreen(false)
         positionInfoPanel()
+        positionFilmstrip()
     }
 
     /// Re-dock the info panel when the main window moves or resizes. The
@@ -762,12 +932,15 @@ extension MainWindowController: NSWindowDelegate {
     func windowDidChangeScreen(_ notification: Notification) {
         guard (notification.object as? NSWindow) === window else { return }
         positionInfoPanel()
+        positionFilmstrip()
     }
 
     func windowWillClose(_ notification: Notification) {
         if (notification.object as? NSWindow) === window {
             infoPanel?.parent?.removeChildWindow(infoPanel!)
             infoPanel?.orderOut(nil)
+            filmstripPanel.parent?.removeChildWindow(filmstripPanel)
+            filmstripPanel.orderOut(nil)
         }
     }
 }

@@ -165,7 +165,7 @@ final class FilmstripView: NSView {
     }
 
     /// Full laid-out width of all cells (sectionInset 6 + N*(56+4) - 4).
-    private var contentWidth: CGFloat {
+    var contentWidth: CGFloat {
         let cell = Self.itemSize.width + Self.spacing
         return max(0, CGFloat(urls.count) * cell - Self.spacing + 12)
     }

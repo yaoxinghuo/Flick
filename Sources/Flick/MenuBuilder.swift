@@ -37,6 +37,8 @@ enum MenuBuilder {
         menu.addItem(make(L10n.s("Copy Image", "拷贝图片"), #selector(MainWindowController.copyImage(_:)), "c"))
         menu.addItem(make(L10n.s("Copy File Path", "拷贝文件路径"), #selector(MainWindowController.copyFilePath(_:)), "c", [.command, .option]))
         menu.addItem(.separator())
+        menu.addItem(make(L10n.s("Print…", "打印…"), #selector(MainWindowController.printImage(_:)), "p"))
+        menu.addItem(.separator())
         menu.addItem(make(L10n.s("Close Window", "关闭窗口"), #selector(NSWindow.performClose(_:)), "w"))
         return item
     }

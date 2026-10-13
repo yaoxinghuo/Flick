@@ -47,10 +47,11 @@ final class ImageView: NSView {
     var onToggleInfoPanel: (() -> Void)?
     var onToggleFilmstrip: (() -> Void)?
     var onTogglePlayback: (() -> Void)?
-    var onFilmstripSelect: ((Int) -> Void)?
     /// Called whenever magnification changes — the controller uses it to
     /// decide whether a higher-resolution decode is needed.
     var onZoomChanged: (() -> Void)?
+    /// Right-click menu builder, supplied by the controller.
+    var contextMenuProvider: (() -> NSMenu?)?
 
     private let spinner: NSProgressIndicator = {
         let indicator = NSProgressIndicator()
@@ -69,17 +70,6 @@ final class ImageView: NSView {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-
-    private let filmstrip = FilmstripView()
-
-    /// Filmstrip preference (persisted): ON = hovering the bottom edge
-    /// floats the strip; OFF = it never appears (saves decode work).
-    private(set) var filmstripEnabled = false
-    private var filmstripTransient = false
-    private var filmstripHasContent = false
-    /// Delays hiding the strip after the pointer leaves the bottom zone —
-    /// instant dismissal felt twitchy when the mouse overshot by a pixel.
-    private var filmstripHideWorkItem: DispatchWorkItem?
 
     // Chrome: floating capsules + breadcrumb + status strip. IUO because the
     /// button target is `self`, which only exists after super.init.
@@ -151,12 +141,6 @@ final class ImageView: NSView {
         }
         addSubview(scrollView)
 
-        filmstrip.isHidden = true
-        filmstrip.onSelect = { [weak self] index in
-            self?.onFilmstripSelect?(index)
-        }
-        addSubview(filmstrip)
-
         for capsule in [titleCapsule, topToolbar!, bottomBar!, statusStrip] {
             capsule.alphaValue = 0
             addSubview(capsule)
@@ -183,19 +167,14 @@ final class ImageView: NSView {
     // MARK: - Layout
 
     /// Everything floats: the scroll view fills the window edge-to-edge
-    /// (under the transparent titlebar), the info panel and filmstrip hover
-    /// over the image instead of taking layout space.
+    /// (under the transparent titlebar), the info panel and filmstrip are
+    /// separate floating panels, not subviews.
     override func layout() {
         super.layout()
         scrollView.frame = bounds
 
-        // The strip exists only while the pointer is in the bottom zone and
-        /// the preference allows hover reveal.
-        let stripShown = filmstripEnabled && filmstripTransient && filmstripHasContent
-
-        // Bottom cluster stacks like Pixea: status strip hugs the bottom-left
-        // corner, the control capsule sits just above it, and the filmstrip
-        // floats above the capsule.
+        // Bottom cluster: status strip hugs the bottom-left corner and the
+        // control capsule sits just above it.
         statusStrip.isHidden = statusZoomText.isEmpty && statusIndexText.isEmpty
             && statusItems.isEmpty
         statusStrip.frame = NSRect(
@@ -211,17 +190,6 @@ final class ImageView: NSView {
             width: bottomSize.width,
             height: bottomSize.height
         )
-        // Full-width band flush against the window edges, above the capsule.
-        filmstrip.frame = NSRect(
-            x: 0,
-            y: bottomBar.frame.maxY + 8,
-            width: bounds.width,
-            height: FilmstripView.height
-        )
-        filmstrip.isHidden = !stripShown
-        if stripShown {
-            filmstrip.ensureLoaded()
-        }
 
         let topSize = topToolbar.fittingSize
         topToolbar.frame = NSRect(
@@ -298,22 +266,19 @@ final class ImageView: NSView {
             return
         }
         chromeHideWorkItem?.cancel()
-        guard chromeVisible || filmstripTransient else { return }
+        guard chromeVisible else { return }
         chromeVisible = false
         setChrome(alpha: 0)
-        filmstripHideWorkItem?.cancel()
-        filmstripHideWorkItem = nil
-        filmstripTransient = false
         needsLayout = true
     }
 
-    /// Bottom edge height where hovering floats the strip / pins chrome.
+    /// Bottom edge height where hovering pins chrome.
     private var bottomHotZone: CGFloat {
-        filmstripTransient ? filmstrip.frame.maxY + 16 : bottomBar.frame.maxY + 14
+        bottomBar.frame.maxY + 14
     }
 
     /// Regions where the pointer pins chrome visible: every capsule, the
-    /// titlebar row (traffic lights), and the filmstrip hover zone.
+    /// titlebar row (traffic lights), and the bottom cluster zone.
     private func isInsideChrome(_ point: NSPoint) -> Bool {
         if point.y > bounds.height - 40 { return true }        // titlebar row
         if point.y < bottomHotZone { return true }             // bottom cluster
@@ -379,35 +344,10 @@ final class ImageView: NSView {
 
     // MARK: - Filmstrip
 
-    func setFilmstripEnabled(_ enabled: Bool) {
-        filmstripEnabled = enabled
-        if !enabled {
-            filmstripHideWorkItem?.cancel()
-            filmstripHideWorkItem = nil
-            filmstripTransient = false
-        }
+    /// The strip itself lives in a floating `FilmstripPanel` owned by the
+    /// controller; this only reflects the preference on the capsule icon.
+    func setFilmstripHighlighted(_ enabled: Bool) {
         bottomBar.setHighlighted(enabled, forTag: ChromeTag.filmstrip)
-        needsLayout = true
-    }
-
-    func setFilmstripFiles(_ urls: [URL]) {
-        filmstripHasContent = urls.count > 1
-        filmstrip.setFiles(urls)
-        needsLayout = true
-    }
-
-    func setFilmstripIndex(_ index: Int) {
-        filmstrip.setCurrentIndex(index)
-    }
-
-    func cachedFilmstripThumbnail(for index: Int) -> CGImage? {
-        filmstrip.cachedThumbnail(for: index)
-    }
-
-    /// Bottom-edge hover reveals the strip when the preference is off;
-    /// bottom-bar button toggles the persisted preference instead.
-    func toggleFilmstripPreference() {
-        onToggleFilmstrip?()
     }
 
     // MARK: - Content
@@ -530,9 +470,6 @@ final class ImageView: NSView {
 
     func setFullScreen(_ fullScreen: Bool) {
         isFullScreen = fullScreen
-        filmstripTransient = false
-        filmstripHideWorkItem?.cancel()
-        filmstripHideWorkItem = nil
         cursorHideWorkItem?.cancel()
         if fullScreen {
             scheduleCursorHide()
@@ -580,28 +517,6 @@ final class ImageView: NSView {
                 NSCursor.unhide()
             }
             scheduleCursorHide()
-        }
-        // Hover near the bottom edge floats the strip — but only when the
-        /// preference is ON; off means never (saves decode work). Hiding is
-        /// delayed so briefly overshooting the zone doesn't yank it away.
-        if let point = lastMousePoint {
-            let inZone = filmstripEnabled && filmstripHasContent
-                && point.y < (filmstripTransient ? filmstrip.frame.maxY + 16 : 160)
-            if inZone {
-                filmstripHideWorkItem?.cancel()
-                if !filmstripTransient {
-                    filmstripTransient = true
-                    needsLayout = true
-                }
-            } else if filmstripTransient, filmstripHideWorkItem == nil {
-                let item = DispatchWorkItem { [weak self] in
-                    self?.filmstripHideWorkItem = nil
-                    self?.filmstripTransient = false
-                    self?.needsLayout = true
-                }
-                filmstripHideWorkItem = item
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: item)
-            }
         }
         showChrome()
     }
@@ -659,6 +574,12 @@ final class ImageView: NSView {
             return
         }
         super.mouseDown(with: event)
+    }
+
+    /// Right-click anywhere in the window (subviews without their own menu
+    /// forward up the responder chain to here).
+    override func menu(for event: NSEvent) -> NSMenu? {
+        contextMenuProvider?()
     }
 
     // MARK: - Chrome button actions

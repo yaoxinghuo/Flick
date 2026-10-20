@@ -643,24 +643,32 @@ final class MainWindowController: NSWindowController {
 
     @objc func printImage(_ sender: Any?) {
         guard let file = currentFile,
-              let loaded = NSImage(contentsOf: file.url) else { return }
+              let image = NSImage(contentsOf: file.url) else { return }
         let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .fit
-        // Preview-style "Auto Rotate": when the image's orientation opposes
-        // the printable area's, a 90° turn fills noticeably more paper.
+        // Seed the "Flick" accessory section's defaults like Preview does:
+        // images that fit the page at 100% print at Scale 100%; bigger ones
+        // default to Scale to Fit / Print Entire Image.
         let printable = printInfo.imageablePageBounds
-        let image = (loaded.size.width > loaded.size.height)
-            != (printable.width > printable.height)
-            ? loaded.rotated90() : loaded
-        let printView = NSImageView(frame: NSRect(origin: .zero, size: image.size))
-        printView.image = image
-        printView.imageScaling = .scaleProportionallyUpOrDown
-        let operation = NSPrintOperation(view: printView, printInfo: printInfo)
+        let fitRatio = min(printable.width / image.size.width,
+                           printable.height / image.size.height)
+        let dict = printInfo.printSettings
+        dict.setObject(true, forKey: PrintSettingKey.autoRotate)
+        if fitRatio >= 1 {
+            dict.setObject(PrintScaleMode.percent.rawValue, forKey: PrintSettingKey.scaleMode)
+            dict.setObject(100.0, forKey: PrintSettingKey.scalePercent)
+        } else {
+            dict.setObject(PrintScaleMode.fit.rawValue, forKey: PrintSettingKey.scaleMode)
+            dict.setObject(floor(fitRatio * 100), forKey: PrintSettingKey.scalePercent)
+        }
+        dict.setObject(1, forKey: PrintSettingKey.copiesPerPage)
+
+        let operation = NSPrintOperation(view: ImagePrintView(image: image),
+                                         printInfo: printInfo)
         // Opt into the standard Paper Size / Orientation / Scaling rows
         // that Preview shows — they're off by default.
         operation.printPanel.options.formUnion(
             [.showsPaperSize, .showsOrientation, .showsScaling])
+        operation.printPanel.addAccessoryController(PrintAccessoryController())
         guard let window else { return }
         operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }

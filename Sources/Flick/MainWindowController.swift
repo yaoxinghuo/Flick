@@ -643,14 +643,24 @@ final class MainWindowController: NSWindowController {
 
     @objc func printImage(_ sender: Any?) {
         guard let file = currentFile,
-              let image = NSImage(contentsOf: file.url) else { return }
+              let loaded = NSImage(contentsOf: file.url) else { return }
+        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .fit
+        // Preview-style "Auto Rotate": when the image's orientation opposes
+        // the printable area's, a 90° turn fills noticeably more paper.
+        let printable = printInfo.imageablePageBounds
+        let image = (loaded.size.width > loaded.size.height)
+            != (printable.width > printable.height)
+            ? loaded.rotated90() : loaded
         let printView = NSImageView(frame: NSRect(origin: .zero, size: image.size))
         printView.image = image
         printView.imageScaling = .scaleProportionallyUpOrDown
-        let operation = NSPrintOperation(view: printView)
-        operation.printInfo.horizontalPagination = .fit
-        operation.printInfo.verticalPagination = .fit
-        operation.showsPrintPanel = true
+        let operation = NSPrintOperation(view: printView, printInfo: printInfo)
+        // Opt into the standard Paper Size / Orientation / Scaling rows
+        // that Preview shows — they're off by default.
+        operation.printPanel.options.formUnion(
+            [.showsPaperSize, .showsOrientation, .showsScaling])
         guard let window else { return }
         operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
@@ -978,5 +988,23 @@ extension MainWindowController: NSWindowDelegate {
             filmstripPanel.parent?.removeChildWindow(filmstripPanel)
             filmstripPanel.orderOut(nil)
         }
+    }
+}
+
+extension NSImage {
+    /// A copy of the image rotated 90° clockwise, for print auto-rotation.
+    func rotated90() -> NSImage {
+        let size = NSSize(width: self.size.height, height: self.size.width)
+        let rotated = NSImage(size: size)
+        rotated.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        let transform = NSAffineTransform()
+        transform.translateX(by: size.width, yBy: 0)
+        transform.rotate(byDegrees: 90)
+        transform.concat()
+        draw(at: .zero, from: NSRect(origin: .zero, size: self.size),
+             operation: .sourceOver, fraction: 1)
+        rotated.unlockFocus()
+        return rotated
     }
 }
